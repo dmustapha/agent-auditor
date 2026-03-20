@@ -45,7 +45,7 @@ export async function getTransactions(
   const res = await rateLimitedFetch(chainId, url);
   const data: BlockscoutPaginatedResponse<BlockscoutTransaction> = await res.json();
 
-  return data.items.map((tx) => ({
+  return (data.items ?? []).map((tx) => ({
     hash: tx.hash,
     from: tx.from.hash,
     to: tx.to?.hash ?? "CONTRACT_CREATION",
@@ -65,7 +65,7 @@ export async function getTokenTransfers(
   const res = await rateLimitedFetch(chainId, url);
   const data: BlockscoutPaginatedResponse<BlockscoutTokenTransfer> = await res.json();
 
-  return data.items.map((t) => ({
+  return (data.items ?? []).map((t) => ({
     token: `${t.token.symbol}:${t.token.address}`,
     from: t.from.hash,
     to: t.to.hash,
@@ -83,7 +83,7 @@ export async function getInternalTransactions(
   const res = await rateLimitedFetch(chainId, url);
   const data: BlockscoutPaginatedResponse<BlockscoutInternalTx> = await res.json();
 
-  return data.items.map((t) => ({
+  return (data.items ?? []).filter((t) => t.to !== null).map((t) => ({
     contract: t.to.hash,
     method: t.type,
     timestamp: new Date(t.timestamp).getTime(),

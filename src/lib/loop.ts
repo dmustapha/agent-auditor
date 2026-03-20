@@ -37,7 +37,8 @@ export async function runOnce(
       // Get current block for checkpoint
       const client = getPublicClient(chainId);
       const currentBlock = await client.getBlockNumber();
-      const fromBlock = checkpoints[chainId] ?? (currentBlock - 10000n); // last ~10k blocks if no checkpoint
+      const rawFromBlock = checkpoints[chainId] ?? (currentBlock - 10000n);
+      const fromBlock = rawFromBlock < 0n ? 0n : rawFromBlock;
 
       // Discover new agents from ERC-8004
       const erc8004Agents = await discoverNewAgents(chainId, fromBlock);
