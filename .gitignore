@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Environment
+.env
+.env.local
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/lib/
+
+# Demo
+.demo-cache/
+
+# Misc
+.DS_Store
+*.tsbuildinfo
