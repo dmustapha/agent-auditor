@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentAuditor — DNA-B-T-M-G-S</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* ── Design Tokens ─────────────────────────────────────────── */
+    :root {
+      --surface:        oklch(0.13 0.00 0);
+      --surface-raised: oklch(0.18 0.00 0);
+      --surface-hover:  oklch(0.21 0.00 0);
+      --border:         oklch(0.27 0.00 0);
+      --text-primary:   oklch(0.98 0.00 0);
+      --text-secondary: oklch(0.68 0.00 0);
+      --accent:         oklch(0.72 0.19 150);
+      --safe:           oklch(0.72 0.19 150);
+      --caution:        oklch(0.79 0.18 85);
+      --blocklist:      oklch(0.63 0.22 27);
+
+      --duration-fast:   150ms;
+      --duration-normal: 300ms;
+      --duration-slow:   500ms;
+      --ease-out:   cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+      --radius-sm:   6px;
+      --radius-md:   10px;
+      --radius-lg:   16px;
+      --radius-xl:   24px;
+      --radius-full: 9999px;
+    }
+
+    /* ── Reset ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #09090B;
+      color: var(--text-primary);
+      min-height: 100dvh;
+      overflow-x: hidden;
+    }
+
+    /* ── Scroll Progress Bar ───────────────────────────────────── */
+    #scroll-progress {
+      position: fixed;
+      top: 0; left: 0;
+      height: 2px;
+      width: 0%;
+      background: linear-gradient(90deg,
+        oklch(0.72 0.19 150) 0%,
+        oklch(0.72 0.19 180) 50%,
+        oklch(0.68 0.20 200) 100%
+      );
+      z-index: 999;
+      transition: width var(--duration-fast) linear;
+    }
+
+    /* ── Gradient Mesh Background ──────────────────────────────── */
+    .mesh-bg {
+      background:
+        radial-gradient(ellipse 80% 50% at 10% 20%, oklch(0.18 0.05 150 / 0.35) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 90% 70%, oklch(0.16 0.04 180 / 0.25) 0%, transparent 55%),
+        radial-gradient(ellipse 50% 60% at 50% 100%, oklch(0.14 0.03 200 / 0.2) 0%, transparent 60%),
+        #09090B;
+    }
+
+    /* ── Noise Overlay ─────────────────────────────────────────── */
+    .noise-overlay::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    /* ── Top Nav ───────────────────────────────────────────────── */
+    .top-nav {
+      position: fixed;
+      top: 2px; left: 0; right: 0;
+      z-index: 90;
+      backdrop-filter: blur(16px) saturate(1.4);
+      background: oklch(0.13 0.00 0 / 0.85);
+      border-bottom: 1px solid oklch(0.27 0.00 0 / 0.6);
+    }
+
+    /* ── Gradient Border Technique ─────────────────────────────── */
+    .grad-border {
+      position: relative;
+      background: var(--surface-raised);
+      border-radius: var(--radius-lg);
+    }
+    .grad-border::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(135deg,
+        oklch(0.72 0.19 150 / 0.5) 0%,
+        oklch(0.68 0.20 200 / 0.2) 40%,
+        oklch(0.27 0.00 0 / 0.1) 70%,
+        oklch(0.72 0.19 150 / 0.3) 100%
+      );
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+      transition: opacity var(--duration-normal) var(--ease-out);
+    }
+    .grad-border:hover::before {
+      background: linear-gradient(135deg,
+        oklch(0.72 0.19 150 / 0.8) 0%,
+        oklch(0.68 0.20 200 / 0.4) 40%,
+        oklch(0.72 0.19 150 / 0.2) 70%,
+        oklch(0.72 0.19 150 / 0.6) 100%
+      );
+    }
+
+    /* ── Card Glow on Hover ────────────────────────────────────── */
+    .card-glow {
+      transition:
+        box-shadow var(--duration-normal) var(--ease-out),
+        transform var(--duration-normal) var(--ease-out);
+    }
+    .card-glow:hover {
+      box-shadow:
+        0 0 0 1px oklch(0.72 0.19 150 / 0.15),
+        0 8px 32px oklch(0.72 0.19 150 / 0.08),
+        0 2px 8px oklch(0.00 0.00 0 / 0.4);
+      transform: translateY(-1px);
+    }
+
+    /* ── Glass Card ────────────────────────────────────────────── */
+    .glass-card {
+      background: linear-gradient(135deg,
+        oklch(0.18 0.01 150 / 0.9) 0%,
+        oklch(0.16 0.00 0 / 0.95) 100%
+      );
+      backdrop-filter: blur(12px);
+      border-radius: var(--radius-lg);
+    }
+
+    /* ── Gradient Text ─────────────────────────────────────────── */
+    .gradient-text {
+      background: linear-gradient(135deg,
+        oklch(0.90 0.12 150) 0%,
+        oklch(0.80 0.18 170) 40%,
+        oklch(0.72 0.19 150) 70%,
+        oklch(0.85 0.15 130) 100%
+      );
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: shimmer-text 4s ease infinite;
+    }
+
+    @keyframes shimmer-text {
+      0%, 100% { background-position: 0% 50%; }
+      50%       { background-position: 100% 50%; }
+    }
+
+    /* ── Skeleton Shimmer ──────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg,
+        oklch(0.18 0.00 0) 25%,
+        oklch(0.24 0.01 150 / 0.5) 50%,
+        oklch(0.18 0.00 0) 75%
+      );
+      background-size: 200% 100%;
+      animation: shimmer 1.6s ease infinite;
+      border-radius: var(--radius-sm);
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ── Button Glow Pulse ─────────────────────────────────────── */
+    .btn-glow {
+      background: linear-gradient(135deg,
+        oklch(0.65 0.19 150) 0%,
+        oklch(0.72 0.19 155) 50%,
+        oklch(0.68 0.20 145) 100%
+      );
+      background-size: 200% 200%;
+      border: none;
+      color: oklch(0.10 0.00 0);
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: var(--radius-md);
+      transition:
+        box-shadow var(--duration-normal) var(--ease-out),
+        transform var(--duration-fast) var(--ease-out),
+        background-position var(--duration-slow) ease;
+    }
+    .btn-glow:hover {
+      box-shadow:
+        0 0 20px oklch(0.72 0.19 150 / 0.4),
+        0 0 40px oklch(0.72 0.19 150 / 0.15);
+      transform: translateY(-1px);
+      background-position: right center;
+    }
+    .btn-glow:active { transform: translateY(0); }
+    .btn-glow:focus-visible {
+      outline: 2px solid oklch(0.72 0.19 150);
+      outline-offset: 2px;
+    }
+    .btn-glow-pulse { animation: glow-pulse 2.5s ease infinite; }
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 8px oklch(0.72 0.19 150 / 0.3); }
+      50%       { box-shadow: 0 0 24px oklch(0.72 0.19 150 / 0.6), 0 0 48px oklch(0.72 0.19 150 / 0.2); }
+    }
+
+    /* ── Score Ring ────────────────────────────────────────────── */
+    .score-ring-track { fill: none; stroke: oklch(0.22 0.00 0); stroke-width: 8; }
+    .score-ring-fill  {
+      fill: none;
+      stroke-width: 8;
+      stroke-linecap: round;
+      transform-origin: center;
+      transform: rotate(-90deg);
+      transition: stroke-dashoffset var(--duration-slow) var(--ease-out);
+    }
+
+    /* ── Breakdown Bar ─────────────────────────────────────────── */
+    .bar-track {
+      background: oklch(0.22 0.00 0);
+      border-radius: var(--radius-full);
+      height: 6px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: var(--radius-full);
+      background: linear-gradient(90deg,
+        oklch(0.60 0.19 150) 0%,
+        oklch(0.72 0.19 155) 60%,
+        oklch(0.78 0.18 165) 100%
+      );
+      transform-origin: left;
+      transform: scaleX(0);
+      transition: transform 0.8s var(--ease-out);
+    }
+    .bar-fill.animate { transform: scaleX(1); }
+
+    /* ── Severity Pill ─────────────────────────────────────────── */
+    .sev-critical {
+      background: oklch(0.63 0.22 27 / 0.15);
+      color: oklch(0.75 0.18 27);
+      border: 1px solid oklch(0.63 0.22 27 / 0.35);
+    }
+    .sev-high {
+      background: oklch(0.79 0.18 85 / 0.12);
+      color: oklch(0.79 0.18 85);
+      border: 1px solid oklch(0.79 0.18 85 / 0.3);
+    }
+    .sev-medium {
+      background: oklch(0.70 0.12 200 / 0.12);
+      color: oklch(0.75 0.12 200);
+      border: 1px solid oklch(0.70 0.12 200 / 0.3);
+    }
+    .sev-low {
+      background: oklch(0.68 0.00 0 / 0.08);
+      color: oklch(0.60 0.00 0);
+      border: 1px solid oklch(0.35 0.00 0);
+    }
+
+    /* ── Recommendation Pill ───────────────────────────────────── */
+    .pill-safe {
+      background: oklch(0.72 0.19 150 / 0.15);
+      color: oklch(0.72 0.19 150);
+      border: 1px solid oklch(0.72 0.19 150 / 0.4);
+    }
+    .pill-caution {
+      background: oklch(0.79 0.18 85 / 0.12);
+      color: oklch(0.79 0.18 85);
+      border: 1px solid oklch(0.79 0.18 85 / 0.35);
+    }
+    .pill-blocklist {
+      background: oklch(0.63 0.22 27 / 0.12);
+      color: oklch(0.70 0.22 27);
+      border: 1px solid oklch(0.63 0.22 27 / 0.35);
+    }
+
+    /* ── Chain Pill ────────────────────────────────────────────── */
+    .chain-pill {
+      background: oklch(0.18 0.02 150 / 0.7);
+      border: 1px solid oklch(0.35 0.04 150 / 0.5);
+      color: oklch(0.75 0.10 150);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── Stagger Children Animation ────────────────────────────── */
+    .stagger-child {
+      opacity: 0;
+      transform: translateY(16px);
+      transition:
+        opacity var(--duration-slow) var(--ease-out),
+        transform var(--duration-slow) var(--ease-out);
+    }
+    .stagger-child.visible { opacity: 1; transform: translateY(0); }
+
+    /* ── Transaction Table ─────────────────────────────────────── */
+    .tx-row {
+      transition: background var(--duration-fast) var(--ease-out);
+    }
+    .tx-row:hover { background: oklch(0.21 0.01 150 / 0.4); }
+
+    /* ── Input ─────────────────────────────────────────────────── */
+    .smart-input {
+      background: oklch(0.14 0.01 150 / 0.6);
+      border: 1px solid oklch(0.30 0.02 150 / 0.5);
+      color: var(--text-primary);
+      border-radius: var(--radius-md);
+      transition:
+        border-color var(--duration-normal) var(--ease-out),
+        box-shadow var(--duration-normal) var(--ease-out);
+      outline: none;
+    }
+    .smart-input:focus {
+      border-color: oklch(0.72 0.19 150 / 0.6);
+      box-shadow: 0 0 0 3px oklch(0.72 0.19 150 / 0.12), 0 0 12px oklch(0.72 0.19 150 / 0.08);
+    }
+    .smart-input::placeholder { color: oklch(0.45 0.00 0); }
+    .smart-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Select ────────────────────────────────────────────────── */
+    .chain-select {
+      background: oklch(0.14 0.01 150 / 0.6);
+      border: 1px solid oklch(0.30 0.02 150 / 0.5);
+      color: var(--text-primary);
+      border-radius: var(--radius-md);
+      appearance: none;
+      cursor: pointer;
+      transition: border-color var(--duration-normal) var(--ease-out);
+      outline: none;
+    }
+    .chain-select:focus { border-color: oklch(0.72 0.19 150 / 0.6); }
+    .chain-select:disabled { opacity: 0.5; cursor: not-allowed; }
+    .chain-select option { background: #141414; }
+
+    /* ── Error Card ────────────────────────────────────────────── */
+    .error-card {
+      background: oklch(0.63 0.22 27 / 0.06);
+      border: 1px solid oklch(0.63 0.22 27 / 0.4);
+      border-radius: var(--radius-lg);
+    }
+
+    /* ── Bento Grid ────────────────────────────────────────────── */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 12px;
+    }
+
+    /* Score card — big featured cell */
+    .bento-score     { grid-column: span 12; }
+    .bento-tx-patterns { grid-column: span 12; }
+    .bento-contract  { grid-column: span 12; }
+    .bento-fund      { grid-column: span 12; }
+    .bento-behavior  { grid-column: span 12; }
+    .bento-flags     { grid-column: span 12; }
+    .bento-summary   { grid-column: span 12; }
+    .bento-table     { grid-column: span 12; }
+
+    @media (min-width: 640px) {
+      .bento-score     { grid-column: span 7; grid-row: span 3; }
+      .bento-tx-patterns { grid-column: span 5; }
+      .bento-contract  { grid-column: span 5; }
+      .bento-fund      { grid-column: span 5; }
+      .bento-behavior  { grid-column: span 5; grid-row: span 2; }
+      .bento-flags     { grid-column: span 7; }
+      .bento-summary   { grid-column: span 12; }
+      .bento-table     { grid-column: span 12; }
+    }
+
+    @media (min-width: 1024px) {
+      .bento-score     { grid-column: span 4; grid-row: span 2; }
+      .bento-tx-patterns { grid-column: span 2; }
+      .bento-contract  { grid-column: span 2; }
+      .bento-fund      { grid-column: span 2; }
+      .bento-behavior  { grid-column: span 2; }
+      .bento-flags     { grid-column: span 4; grid-row: span 2; }
+      .bento-summary   { grid-column: span 4; }
+      .bento-table     { grid-column: span 12; }
+    }
+
+    /* ── DNA Badge ─────────────────────────────────────────────── */
+    .dna-badge {
+      position: fixed;
+      top: 72px;
+      right: 16px;
+      z-index: 89;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      background: oklch(0.15 0.03 150 / 0.9);
+      border: 1px solid oklch(0.72 0.19 150 / 0.3);
+      color: oklch(0.72 0.19 150);
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      backdrop-filter: blur(8px);
+    }
+
+    /* ── State Demo Controls ───────────────────────────────────── */
+    .demo-controls {
+      background: oklch(0.15 0.02 150 / 0.8);
+      border: 1px solid oklch(0.72 0.19 150 / 0.2);
+      border-radius: var(--radius-md);
+      backdrop-filter: blur(8px);
+    }
+    .demo-btn {
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition:
+        background var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+      border: 1px solid transparent;
+    }
+    .demo-btn.active {
+      background: oklch(0.72 0.19 150 / 0.2);
+      color: oklch(0.72 0.19 150);
+      border-color: oklch(0.72 0.19 150 / 0.4);
+    }
+    .demo-btn:not(.active) {
+      background: transparent;
+      color: oklch(0.55 0.00 0);
+    }
+    .demo-btn:not(.active):hover {
+      background: oklch(0.22 0.00 0);
+      color: oklch(0.80 0.00 0);
+    }
+
+    /* ── Hint Badge ────────────────────────────────────────────── */
+    .hint-badge {
+      background: oklch(0.72 0.19 150 / 0.12);
+      border: 1px solid oklch(0.72 0.19 150 / 0.3);
+      color: oklch(0.72 0.19 150);
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      white-space: nowrap;
+    }
+
+    /* ── Reduced Motion ────────────────────────────────────────── */
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* ── Utility ───────────────────────────────────────────────── */
+    .hidden { display: none !important; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .text-accent { color: oklch(0.72 0.19 150); }
+    .text-caution { color: oklch(0.79 0.18 85); }
+    .text-danger  { color: oklch(0.70 0.22 27); }
+    .text-muted   { color: var(--text-secondary); }
+    .divider { height: 1px; background: oklch(0.27 0.00 0 / 0.5); }
+
+    /* ── Score ring gradient stroke ────────────────────────────── */
+    #score-ring-gradient-safe stop:first-child   { stop-color: oklch(0.60 0.19 150); }
+    #score-ring-gradient-safe stop:last-child    { stop-color: oklch(0.78 0.19 165); }
+    #score-ring-gradient-caution stop:first-child { stop-color: oklch(0.72 0.18 85); }
+    #score-ring-gradient-caution stop:last-child  { stop-color: oklch(0.85 0.16 95); }
+    #score-ring-gradient-danger stop:first-child  { stop-color: oklch(0.55 0.22 27); }
+    #score-ring-gradient-danger stop:last-child   { stop-color: oklch(0.70 0.20 35); }
+  </style>
+</head>
+
+<body class="mesh-bg noise-overlay">
+
+  <!-- Scroll Progress -->
+  <div id="scroll-progress"></div>
+
+  <!-- DNA Badge -->
+  <div class="dna-badge">DNA-B-T-M-G-S</div>
+
+  <!-- ── Top Navigation ──────────────────────────────────────── -->
+  <nav class="top-nav" role="navigation" aria-label="Main navigation">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded-md flex items-center justify-center" style="background: linear-gradient(135deg, oklch(0.65 0.19 150) 0%, oklch(0.72 0.19 165) 100%);">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M7 1L12 4V10L7 13L2 10V4L7 1Z" stroke="oklch(0.10 0.00 0)" stroke-width="1.5" fill="oklch(0.10 0.00 0 / 0.2)"/>
+            <circle cx="7" cy="7" r="2" fill="oklch(0.10 0.00 0)"/>
+          </svg>
+        </div>
+        <span class="font-semibold text-sm tracking-tight" style="color: var(--text-primary);">
+          Agent<span class="gradient-text font-bold">Auditor</span>
+        </span>
+      </div>
+      <div class="flex items-center gap-4">
+        <span class="text-xs mono" style="color: var(--text-secondary);">Trust scores for AI agents across EVM chains</span>
+        <div class="w-2 h-2 rounded-full animate-pulse" style="background: oklch(0.72 0.19 150);"></div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Main Content ─────────────────────────────────────────── -->
+  <main class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 pt-24 pb-16" aria-label="Main content">
+
+    <!-- ── State Demo Controls ─────────────────────────────── -->
+    <div class="demo-controls flex items-center gap-2 p-2 mb-8 w-fit" role="group" aria-label="Demo state selector">
+      <span class="text-xs text-muted ml-1 mr-1">State:</span>
+      <button class="demo-btn active" data-state="empty" onclick="setState('empty')">Empty</button>
+      <button class="demo-btn" data-state="loading" onclick="setState('loading')">Loading</button>
+      <button class="demo-btn" data-state="results" onclick="setState('results')">Results</button>
+      <button class="demo-btn" data-state="error" onclick="setState('error')">Error</button>
+    </div>
+
+    <!-- ── Hero / Input Island ──────────────────────────────── -->
+    <section class="py-6 mb-6" aria-label="Agent search">
+      <div class="mb-6">
+        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight mb-2">
+          <span class="gradient-text">Trust Scoring</span>
+          <span style="color: var(--text-primary)"> Dashboard</span>
+        </h1>
+        <p class="text-sm" style="color: var(--text-secondary);">
+          Onchain behavioral analysis for AI agents — Transaction patterns, contract interactions, fund flow
+        </p>
+      </div>
+
+      <!-- Input Area -->
+      <div class="grad-border glass-card card-glow p-5 sm:p-6">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <!-- Smart Input -->
+          <div class="relative flex-1">
+            <input
+              id="agent-input"
+              type="text"
+              class="smart-input w-full h-11 px-4 pr-36 text-sm"
+              placeholder="Enter Agent ID, address, or name..."
+              aria-label="Agent identifier input"
+              oninput="handleInputChange(this.value)"
+              onkeydown="handleKeydown(event)"
+            />
+            <div id="hint-badge" class="hint-badge absolute right-3 top-1/2 -translate-y-1/2 hidden" aria-live="polite"></div>
+          </div>
+
+          <!-- Chain Selector -->
+          <div class="relative">
+            <select
+              id="chain-select"
+              class="chain-select h-11 pl-4 pr-8 text-sm min-w-36"
+              aria-label="Select blockchain network"
+            >
+              <option value="all">All Chains</option>
+              <option value="base">Base</option>
+              <option value="gnosis">Gnosis</option>
+              <option value="ethereum">Ethereum</option>
+              <option value="arbitrum">Arbitrum</option>
+              <option value="optimism">Optimism</option>
+              <option value="polygon">Polygon</option>
+            </select>
+            <svg class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M2 4L6 8L10 4" stroke="oklch(0.55 0.00 0)" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+
+          <!-- Analyze Button -->
+          <button
+            id="analyze-btn"
+            class="btn-glow btn-glow-pulse h-11 px-6 text-sm font-semibold whitespace-nowrap"
+            onclick="runAnalysis()"
+            aria-label="Run agent analysis"
+          >
+            Analyze Agent
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <!-- STATE: EMPTY                                            -->
+    <!-- ─────────────────────────────────────────────────────── -->
+    <div id="state-empty">
+      <div class="grad-border glass-card p-12 sm:p-16 flex flex-col items-center justify-center text-center gap-4 stagger-child">
+        <div class="w-16 h-16 rounded-2xl flex items-center justify-center mb-2" style="background: linear-gradient(135deg, oklch(0.18 0.03 150) 0%, oklch(0.20 0.05 165) 100%); border: 1px solid oklch(0.72 0.19 150 / 0.2);">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <path d="M14 3L24 8.5V19.5L14 25L4 19.5V8.5L14 3Z" stroke="oklch(0.72 0.19 150)" stroke-width="1.5" fill="none"/>
+            <circle cx="14" cy="14" r="4" stroke="oklch(0.72 0.19 150)" stroke-width="1.5" fill="oklch(0.72 0.19 150 / 0.1)"/>
+            <path d="M10 14H7M21 14H18M14 10V7M14 21V18" stroke="oklch(0.72 0.19 150 / 0.6)" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h2 class="text-lg font-semibold" style="color: var(--text-primary);">Enter an agent to begin</h2>
+        <p class="text-sm max-w-sm" style="color: var(--text-secondary);">
+          Paste an agent address, ID, or ENS name above to run a full onchain trust analysis
+        </p>
+        <div class="flex flex-wrap gap-2 justify-center mt-2">
+          <span class="text-xs mono px-3 py-1.5 rounded-full" style="background: oklch(0.18 0.00 0); border: 1px solid oklch(0.27 0.00 0); color: var(--text-secondary);">0x1a2b...3c4d</span>
+          <span class="text-xs mono px-3 py-1.5 rounded-full" style="background: oklch(0.18 0.00 0); border: 1px solid oklch(0.27 0.00 0); color: var(--text-secondary);">agent.eth</span>
+          <span class="text-xs mono px-3 py-1.5 rounded-full" style="background: oklch(0.18 0.00 0); border: 1px solid oklch(0.27 0.00 0); color: var(--text-secondary);">Agent #4521</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <!-- STATE: LOADING                                          -->
+    <!-- ─────────────────────────────────────────────────────── -->
+    <div id="state-loading" class="hidden">
+      <div class="grad-border glass-card p-6 mb-3 flex items-center gap-4">
+        <div class="skeleton w-5 h-5 rounded-full shrink-0"></div>
+        <p class="text-sm" style="color: var(--text-secondary);">Fetching onchain data and running analysis...</p>
+      </div>
+      <div class="bento-grid">
+        <!-- Score skeleton — large cell -->
+        <div class="bento-score grad-border glass-card p-6 min-h-56 flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <div class="skeleton h-4 w-40 rounded"></div>
+            <div class="skeleton h-6 w-16 rounded-full"></div>
+          </div>
+          <div class="flex-1 flex items-center justify-center">
+            <div class="skeleton w-32 h-32 rounded-full"></div>
+          </div>
+          <div class="skeleton h-3 w-24 rounded mx-auto"></div>
+        </div>
+        <!-- Axis skeletons -->
+        <div class="bento-tx-patterns grad-border glass-card p-5 flex flex-col gap-3">
+          <div class="skeleton h-3 w-32 rounded"></div>
+          <div class="skeleton h-2 w-full rounded-full"></div>
+          <div class="skeleton h-3 w-8 rounded"></div>
+        </div>
+        <div class="bento-contract grad-border glass-card p-5 flex flex-col gap-3">
+          <div class="skeleton h-3 w-36 rounded"></div>
+          <div class="skeleton h-2 w-full rounded-full"></div>
+          <div class="skeleton h-3 w-8 rounded"></div>
+        </div>
+        <div class="bento-fund grad-border glass-card p-5 flex flex-col gap-3">
+          <div class="skeleton h-3 w-24 rounded"></div>
+          <div class="skeleton h-2 w-full rounded-full"></div>
+          <div class="skeleton h-3 w-8 rounded"></div>
+        </div>
+        <div class="bento-behavior grad-border glass-card p-5 flex flex-col gap-3">
+          <div class="skeleton h-3 w-40 rounded"></div>
+          <div class="skeleton h-2 w-full rounded-full"></div>
+          <div class="skeleton h-3 w-8 rounded"></div>
+        </div>
+        <!-- Flags skeleton -->
+        <div class="bento-flags grad-border glass-card p-5 flex flex-col gap-3">
+          <div class="skeleton h-4 w-20 rounded mb-1"></div>
+          <div class="skeleton h-12 w-full rounded-lg"></div>
+          <div class="skeleton h-12 w-full rounded-lg"></div>
+        </div>
+        <!-- Summary skeleton -->
+        <div class="bento-summary grad-border glass-card p-5 flex flex-col gap-2">
+          <div class="skeleton h-3 w-28 rounded mb-1"></div>
+          <div class="skeleton h-3 w-full rounded"></div>
+          <div class="skeleton h-3 w-5/6 rounded"></div>
+          <div class="skeleton h-3 w-4/5 rounded"></div>
+        </div>
+        <!-- Table skeleton -->
+        <div class="bento-table grad-border glass-card p-5 flex flex-col gap-3">
+          <div class="skeleton h-4 w-40 rounded mb-1"></div>
+          <div class="skeleton h-10 w-full rounded-lg"></div>
+          <div class="skeleton h-10 w-full rounded-lg"></div>
+          <div class="skeleton h-10 w-full rounded-lg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <!-- STATE: RESULTS                                          -->
+    <!-- ─────────────────────────────────────────────────────── -->
+    <div id="state-results" class="hidden">
+
+      <!-- Stats Strip — Breakout Band -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5 stagger-child">
+        <div class="grad-border glass-card card-glow p-4 flex flex-col gap-1">
+          <span class="text-xs text-muted">Trust Score</span>
+          <span class="text-2xl font-bold text-accent mono" id="stat-score">78</span>
+          <span class="text-xs text-muted">out of 100</span>
+        </div>
+        <div class="grad-border glass-card card-glow p-4 flex flex-col gap-1">
+          <span class="text-xs text-muted">Transactions</span>
+          <span class="text-2xl font-bold mono" style="color: var(--text-primary);" id="stat-txns">247</span>
+          <span class="text-xs text-muted">last 90 days</span>
+        </div>
+        <div class="grad-border glass-card card-glow p-4 flex flex-col gap-1">
+          <span class="text-xs text-muted">Flags</span>
+          <span class="text-2xl font-bold text-caution mono" id="stat-flags">3</span>
+          <span class="text-xs text-muted">detected</span>
+        </div>
+        <div class="grad-border glass-card card-glow p-4 flex flex-col gap-1">
+          <span class="text-xs text-muted">Contracts</span>
+          <span class="text-2xl font-bold mono" style="color: var(--text-primary);" id="stat-contracts">14</span>
+          <span class="text-xs text-muted">unique interactions</span>
+        </div>
+      </div>
+
+      <!-- Bento Dashboard Grid -->
+      <div class="bento-grid">
+
+        <!-- ── Score Card — Large Featured Cell ──────────────── -->
+        <div class="bento-score grad-border glass-card card-glow p-6 flex flex-col gap-4 stagger-child" role="region" aria-label="Trust score">
+
+          <!-- Header row -->
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="mono text-xs truncate max-w-48" style="color: var(--text-secondary);" title="0x1a2b3c4d5e6f7890abcd1234ef567890abcdef12">
+              0x1a2b...ef12
+            </span>
+            <span class="chain-pill text-xs px-2 py-0.5 rounded-full font-medium">Base</span>
+            <span class="pill-safe text-xs px-2.5 py-0.5 rounded-full font-semibold ml-auto">SAFE</span>
+          </div>
+
+          <!-- Score Gauge (SVG Ring) -->
+          <div class="flex flex-col items-center gap-3">
+            <div class="relative w-36 h-36" role="img" aria-label="Trust score: 78 out of 100">
+              <svg width="144" height="144" viewBox="0 0 144 144" aria-hidden="true">
+                <defs>
+                  <linearGradient id="score-ring-gradient-safe" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" />
+                    <stop offset="100%" />
+                  </linearGradient>
+                </defs>
+                <circle class="score-ring-track" cx="72" cy="72" r="60" />
+                <circle
+                  id="score-ring"
+                  class="score-ring-fill"
+                  cx="72" cy="72" r="60"
+                  stroke="url(#score-ring-gradient-safe)"
+                  stroke-dasharray="376.99"
+                  stroke-dashoffset="376.99"
+                />
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span class="text-3xl font-bold text-accent mono" id="score-display">0</span>
+                <span class="text-xs text-muted">/ 100</span>
+              </div>
+            </div>
+            <span class="text-xs text-muted">Analyzed Mar 20, 2026 · 14:32 UTC</span>
+          </div>
+        </div>
+
+        <!-- ── Transaction Patterns ───────────────────────────── -->
+        <div class="bento-tx-patterns grad-border glass-card card-glow p-5 flex flex-col gap-3 stagger-child" role="region" aria-label="Transaction patterns score">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium" style="color: var(--text-secondary);">Transaction Patterns</span>
+            <span class="text-sm font-bold text-accent mono">20<span class="text-xs text-muted">/25</span></span>
+          </div>
+          <div class="bar-track" role="progressbar" aria-valuenow="20" aria-valuemin="0" aria-valuemax="25" aria-label="Transaction patterns: 20 out of 25">
+            <div class="bar-fill" style="--bar-width: 80%;" data-width="0.80"></div>
+          </div>
+          <p class="text-xs" style="color: var(--text-secondary);">Consistent with expected agent behavior patterns</p>
+        </div>
+
+        <!-- ── Contract Interactions ──────────────────────────── -->
+        <div class="bento-contract grad-border glass-card card-glow p-5 flex flex-col gap-3 stagger-child" role="region" aria-label="Contract interactions score">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium" style="color: var(--text-secondary);">Contract Interactions</span>
+            <span class="text-sm font-bold text-accent mono">18<span class="text-xs text-muted">/25</span></span>
+          </div>
+          <div class="bar-track" role="progressbar" aria-valuenow="18" aria-valuemin="0" aria-valuemax="25" aria-label="Contract interactions: 18 out of 25">
+            <div class="bar-fill" data-width="0.72"></div>
+          </div>
+          <p class="text-xs" style="color: var(--text-secondary);">14 unique contracts, 2 flagged as high-risk</p>
+        </div>
+
+        <!-- ── Fund Flow ──────────────────────────────────────── -->
+        <div class="bento-fund grad-border glass-card card-glow p-5 flex flex-col gap-3 stagger-child" role="region" aria-label="Fund flow score">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium" style="color: var(--text-secondary);">Fund Flow</span>
+            <span class="text-sm font-bold text-caution mono">21<span class="text-xs text-muted">/25</span></span>
+          </div>
+          <div class="bar-track" role="progressbar" aria-valuenow="21" aria-valuemin="0" aria-valuemax="25" aria-label="Fund flow: 21 out of 25">
+            <div class="bar-fill" style="background: linear-gradient(90deg, oklch(0.72 0.18 85) 0%, oklch(0.82 0.16 95) 100%);" data-width="0.84"></div>
+          </div>
+          <p class="text-xs" style="color: var(--text-secondary);">Minor irregular outflow detected on Mar 14</p>
+        </div>
+
+        <!-- ── Behavioral Consistency ─────────────────────────── -->
+        <div class="bento-behavior grad-border glass-card card-glow p-5 flex flex-col gap-3 stagger-child" role="region" aria-label="Behavioral consistency score">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium" style="color: var(--text-secondary);">Behavioral Consistency</span>
+            <span class="text-sm font-bold text-accent mono">19<span class="text-xs text-muted">/25</span></span>
+          </div>
+          <div class="bar-track" role="progressbar" aria-valuenow="19" aria-valuemin="0" aria-valuemax="25" aria-label="Behavioral consistency: 19 out of 25">
+            <div class="bar-fill" data-width="0.76"></div>
+          </div>
+          <p class="text-xs" style="color: var(--text-secondary);">Stable operating pattern over 90-day window</p>
+        </div>
+
+        <!-- ── Flags Panel ────────────────────────────────────── -->
+        <div class="bento-flags grad-border glass-card card-glow p-5 flex flex-col gap-3 stagger-child" role="region" aria-label="Security flags">
+          <h3 class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-secondary);">Detected Flags</h3>
+
+          <!-- Flag 1 — HIGH -->
+          <div class="flex gap-3 p-3 rounded-lg" style="background: oklch(0.79 0.18 85 / 0.06); border: 1px solid oklch(0.79 0.18 85 / 0.2);" role="alert">
+            <span class="sev-high text-xs px-2 py-0.5 rounded-full font-semibold h-fit shrink-0">HIGH</span>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium" style="color: var(--text-primary);">Interaction with unverified contract</span>
+              <span class="text-xs mono" style="color: var(--text-secondary);">0xdead...beef · 3 calls</span>
+            </div>
+          </div>
+
+          <!-- Flag 2 — MEDIUM -->
+          <div class="flex gap-3 p-3 rounded-lg" style="background: oklch(0.70 0.12 200 / 0.06); border: 1px solid oklch(0.70 0.12 200 / 0.2);" role="alert">
+            <span class="sev-medium text-xs px-2 py-0.5 rounded-full font-semibold h-fit shrink-0">MED</span>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium" style="color: var(--text-primary);">Unusual gas usage spike</span>
+              <span class="text-xs mono" style="color: var(--text-secondary);">Mar 14 · 2.4x avg gas</span>
+            </div>
+          </div>
+
+          <!-- Flag 3 — LOW -->
+          <div class="flex gap-3 p-3 rounded-lg" style="background: oklch(0.40 0.00 0 / 0.06); border: 1px solid oklch(0.30 0.00 0);" role="alert">
+            <span class="sev-low text-xs px-2 py-0.5 rounded-full font-semibold h-fit shrink-0">LOW</span>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium" style="color: var(--text-primary);">Off-hours activity pattern</span>
+              <span class="text-xs" style="color: var(--text-secondary);">12% transactions outside normal window</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── AI Summary ─────────────────────────────────────── -->
+        <div class="bento-summary grad-border glass-card card-glow p-5 flex flex-col gap-3 stagger-child" role="region" aria-label="AI analysis summary">
+          <h3 class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-secondary);">Analysis Summary</h3>
+          <p class="text-sm leading-relaxed" style="color: var(--text-primary);">
+            Agent <span class="mono text-accent">0x1a2b...ef12</span> exhibits broadly consistent behavior for an autonomous DeFi agent operating on Base. The 247 transactions over 90 days show predictable timing with minor anomalies on Mar 14. Two contract interactions warrant attention — one unverified deployment and one high-gas spike. Fund flow is within normal parameters. Overall risk profile is <span class="text-accent font-semibold">low</span>, and the agent is considered safe for continued interactions at current exposure levels.
+          </p>
+          <div class="divider mt-1"></div>
+          <span class="text-xs mono" style="color: var(--text-secondary);">Analyzed Mar 20, 2026 at 14:32 UTC · Model v2.4.1</span>
+        </div>
+
+        <!-- ── Transaction Table ──────────────────────────────── -->
+        <div class="bento-table grad-border glass-card stagger-child overflow-hidden" role="region" aria-label="Recent transactions">
+          <div class="p-5 pb-3 flex items-center justify-between">
+            <h3 class="text-sm font-semibold" style="color: var(--text-primary);">Recent Transactions</h3>
+            <span class="text-xs text-muted">Last 7 days</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs" aria-label="Transaction list">
+              <thead>
+                <tr style="border-bottom: 1px solid oklch(0.27 0.00 0 / 0.5);">
+                  <th class="text-left px-5 py-3 font-medium text-muted">Hash</th>
+                  <th class="text-left px-4 py-3 font-medium text-muted hidden sm:table-cell">From</th>
+                  <th class="text-left px-4 py-3 font-medium text-muted hidden sm:table-cell">To</th>
+                  <th class="text-right px-4 py-3 font-medium text-muted">Value (ETH)</th>
+                  <th class="text-right px-5 py-3 font-medium text-muted hidden md:table-cell">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="tx-row" style="border-bottom: 1px solid oklch(0.22 0.00 0 / 0.5);">
+                  <td class="px-5 py-3">
+                    <a href="#" class="mono text-accent hover:underline focus:underline" aria-label="View transaction 0x3f8a...d219 on explorer">0x3f8a...d219</a>
+                  </td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0x1a2b...ef12</td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0x9f12...aa03</td>
+                  <td class="px-4 py-3 mono text-right" style="color: var(--text-primary);">0.4820</td>
+                  <td class="px-5 py-3 text-right hidden md:table-cell" style="color: var(--text-secondary);">2h ago</td>
+                </tr>
+                <tr class="tx-row" style="border-bottom: 1px solid oklch(0.22 0.00 0 / 0.5);">
+                  <td class="px-5 py-3">
+                    <a href="#" class="mono text-accent hover:underline focus:underline" aria-label="View transaction 0xb1c4...7f80 on explorer">0xb1c4...7f80</a>
+                  </td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0x7e55...cc21</td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0x1a2b...ef12</td>
+                  <td class="px-4 py-3 mono text-right" style="color: var(--text-primary);">1.0000</td>
+                  <td class="px-5 py-3 text-right hidden md:table-cell" style="color: var(--text-secondary);">5h ago</td>
+                </tr>
+                <tr class="tx-row" style="border-bottom: 1px solid oklch(0.22 0.00 0 / 0.5);">
+                  <td class="px-5 py-3">
+                    <a href="#" class="mono text-accent hover:underline focus:underline" aria-label="View transaction 0x5511...e090 on explorer">0x5511...e090</a>
+                  </td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0x1a2b...ef12</td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0xdead...beef</td>
+                  <td class="px-4 py-3 mono text-right text-caution">&lt;0.001</td>
+                  <td class="px-5 py-3 text-right hidden md:table-cell" style="color: var(--text-secondary);">1d ago</td>
+                </tr>
+                <tr class="tx-row" style="border-bottom: 1px solid oklch(0.22 0.00 0 / 0.5);">
+                  <td class="px-5 py-3">
+                    <a href="#" class="mono text-accent hover:underline focus:underline" aria-label="View transaction 0xcc82...1100 on explorer">0xcc82...1100</a>
+                  </td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0x1a2b...ef12</td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0x4433...bb99</td>
+                  <td class="px-4 py-3 mono text-right" style="color: var(--text-primary);">0.0000</td>
+                  <td class="px-5 py-3 text-right hidden md:table-cell" style="color: var(--text-secondary);">2d ago</td>
+                </tr>
+                <tr class="tx-row">
+                  <td class="px-5 py-3">
+                    <a href="#" class="mono text-accent hover:underline focus:underline" aria-label="View transaction 0xa901...f443 on explorer">0xa901...f443</a>
+                  </td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0x9900...1122</td>
+                  <td class="px-4 py-3 mono hidden sm:table-cell" style="color: var(--text-secondary);">0x1a2b...ef12</td>
+                  <td class="px-4 py-3 mono text-right" style="color: var(--text-primary);">2.3100</td>
+                  <td class="px-5 py-3 text-right hidden md:table-cell" style="color: var(--text-secondary);">3d ago</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /bento-grid -->
+    </div><!-- /state-results -->
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <!-- STATE: ERROR                                            -->
+    <!-- ─────────────────────────────────────────────────────── -->
+    <div id="state-error" class="hidden">
+      <div class="error-card p-8 flex flex-col items-center gap-4 text-center stagger-child" role="alert" aria-live="assertive">
+        <div class="w-12 h-12 rounded-xl flex items-center justify-center" style="background: oklch(0.63 0.22 27 / 0.12); border: 1px solid oklch(0.63 0.22 27 / 0.35);">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+            <path d="M11 2L20 19H2L11 2Z" stroke="oklch(0.70 0.22 27)" stroke-width="1.5" fill="none"/>
+            <path d="M11 9V13" stroke="oklch(0.70 0.22 27)" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="11" cy="16" r="1" fill="oklch(0.70 0.22 27)"/>
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-base font-semibold text-danger mb-1">Analysis Failed</h2>
+          <p class="text-sm" style="color: var(--text-secondary);">Failed to connect to analysis service</p>
+        </div>
+        <p class="text-xs max-w-sm" style="color: var(--text-secondary);">
+          Could not reach the onchain indexer. Check your network connection or try again in a moment. If the issue persists, the RPC endpoint may be rate-limited.
+        </p>
+        <button
+          class="btn-glow px-5 py-2.5 text-sm mt-2"
+          onclick="setState('empty')"
+          aria-label="Retry analysis"
+        >
+          Retry Analysis
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── JavaScript ───────────────────────────────────────────── -->
+  <script>
+    /* ── State Management ──────────────────────────────────────── */
+    let currentState = 'empty';
+
+    function setState(state) {
+      ['empty', 'loading', 'results', 'error'].forEach(s => {
+        const el = document.getElementById('state-' + s);
+        if (el) el.classList.toggle('hidden', s !== state);
+      });
+
+      // Update demo buttons
+      document.querySelectorAll('.demo-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.state === state);
+      });
+
+      // Input disabled state
+      const input  = document.getElementById('agent-input');
+      const select = document.getElementById('chain-select');
+      const btn    = document.getElementById('analyze-btn');
+      const isDisabled = state === 'loading';
+      if (input)  input.disabled  = isDisabled;
+      if (select) select.disabled = isDisabled;
+      if (btn)    btn.disabled    = isDisabled;
+
+      currentState = state;
+
+      // Animate results when revealed
+      if (state === 'results') {
+        requestAnimationFrame(() => {
+          animateScoreRing(78, 'safe');
+          animateCounters();
+          animateBars();
+          revealStaggerChildren();
+        });
+      }
+
+      // Animate error/empty on show
+      if (state === 'error' || state === 'empty') {
+        requestAnimationFrame(revealStaggerChildren);
+      }
+    }
+
+    /* ── Input Detection ───────────────────────────────────────── */
+    function handleInputChange(value) {
+      const badge = document.getElementById('hint-badge');
+      const trimmed = value.trim();
+      if (!trimmed) { badge.classList.add('hidden'); return; }
+
+      let hint = '';
+      if (/^\d+$/.test(trimmed)) {
+        hint = 'Agent ID detected';
+      } else if (/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+        hint = 'Address detected';
+      } else if (trimmed.endsWith('.eth')) {
+        hint = 'ENS name detected';
+      } else {
+        hint = 'Name search';
+      }
+
+      badge.textContent = hint;
+      badge.classList.remove('hidden');
+    }
+
+    function handleKeydown(e) {
+      if (e.key === 'Enter') runAnalysis();
+    }
+
+    function runAnalysis() {
+      setState('loading');
+      setTimeout(() => setState('results'), 2200);
+    }
+
+    /* ── Score Ring Animation (WAAPI) ─────────────────────────── */
+    function animateScoreRing(score, type) {
+      const ring = document.getElementById('score-ring');
+      const display = document.getElementById('score-display');
+      if (!ring || !display) return;
+
+      const circumference = 2 * Math.PI * 60; // r=60 → ~376.99
+      const offset = circumference * (1 - score / 100);
+
+      ring.animate(
+        [
+          { strokeDashoffset: circumference.toString() },
+          { strokeDashoffset: offset.toString() }
+        ],
+        { duration: 900, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'forwards' }
+      );
+    }
+
+    /* ── Counter Animation ─────────────────────────────────────── */
+    function animateCounter(el, target, duration) {
+      const start = performance.now();
+      function tick(now) {
+        const progress = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = Math.round(eased * target);
+        if (progress < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    function animateCounters() {
+      const scoreDisplay = document.getElementById('score-display');
+      const statScore    = document.getElementById('stat-score');
+      const statTxns     = document.getElementById('stat-txns');
+      const statFlags    = document.getElementById('stat-flags');
+      const statContracts = document.getElementById('stat-contracts');
+
+      if (scoreDisplay) animateCounter(scoreDisplay, 78, 900);
+      if (statScore)    animateCounter(statScore, 78, 900);
+      if (statTxns)     animateCounter(statTxns, 247, 1100);
+      if (statFlags)    animateCounter(statFlags, 3, 600);
+      if (statContracts) animateCounter(statContracts, 14, 800);
+    }
+
+    /* ── Bar Animations ────────────────────────────────────────── */
+    function animateBars() {
+      document.querySelectorAll('.bar-fill').forEach((bar, i) => {
+        const width = parseFloat(bar.dataset.width || '0');
+        setTimeout(() => {
+          bar.style.transition = `transform ${700 + i * 80}ms cubic-bezier(0.16, 1, 0.3, 1)`;
+          bar.style.transform  = `scaleX(${width})`;
+        }, 200 + i * 80);
+      });
+    }
+
+    /* ── Stagger Children (IntersectionObserver) ───────────────── */
+    function revealStaggerChildren() {
+      const children = document.querySelectorAll('.stagger-child:not(.visible)');
+      children.forEach((child, i) => {
+        setTimeout(() => {
+          child.classList.add('visible');
+        }, i * 80);
+      });
+    }
+
+    /* ── Scroll Progress Bar ───────────────────────────────────── */
+    const progressBar = document.getElementById('scroll-progress');
+    function updateScrollProgress() {
+      const scrollTop    = window.scrollY;
+      const docHeight    = document.documentElement.scrollHeight - window.innerHeight;
+      const pct          = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+      if (progressBar) progressBar.style.width = pct + '%';
+    }
+    window.addEventListener('scroll', updateScrollProgress, { passive: true });
+
+    /* ── IntersectionObserver for scroll-triggered sections ─────── */
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          // Trigger bars if inside results
+          if (entry.target.querySelector && entry.target.querySelector('.bar-fill')) {
+            animateBars();
+          }
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.stagger-child').forEach(el => observer.observe(el));
+
+    /* ── Init ────────────────────────────────────────────────────── */
+    setState('empty');
+  </script>
+
+</body>
+</html>

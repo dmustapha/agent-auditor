@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentAuditor — DNA-A-S-S-N-X</title>
+
+  <!-- Google Fonts: Cormorant Garamond (serif headings) + Inter (body) + JetBrains Mono (data) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    /* ─── DESIGN TOKENS ─── */
+    :root {
+      /* Neutral surfaces — cool-tinted grays, never pure black */
+      --surface:          oklch(0.10 0.005 260);
+      --surface-raised:   oklch(0.14 0.005 260);
+      --surface-hover:    oklch(0.17 0.006 260);
+      --surface-card:     oklch(0.12 0.005 260);
+      --border:           oklch(0.20 0.006 260);
+      --border-subtle:    oklch(0.17 0.005 260);
+
+      /* Text — warm grays for editorial feel */
+      --text-primary:     oklch(0.91 0.006 75);
+      --text-secondary:   oklch(0.60 0.006 75);
+      --text-muted:       oklch(0.42 0.005 75);
+
+      /* ONE accent: rotated violet (+137.5° from green 150°), muted & authoritative */
+      --accent:           oklch(0.55 0.10 287);
+      --accent-dim:       oklch(0.40 0.07 287);
+      --accent-glow:      oklch(0.55 0.10 287 / 0.18);
+      --accent-border:    oklch(0.55 0.10 287 / 0.35);
+
+      /* Semantic status — preserved meaning, slightly desaturated */
+      --safe:             oklch(0.68 0.14 150);
+      --safe-dim:         oklch(0.68 0.14 150 / 0.15);
+      --caution:          oklch(0.75 0.14 85);
+      --caution-dim:      oklch(0.75 0.14 85 / 0.15);
+      --blocklist:        oklch(0.60 0.18 27);
+      --blocklist-dim:    oklch(0.60 0.18 27 / 0.15);
+
+      /* Typography */
+      --font-serif:       'Cormorant Garamond', Georgia, serif;
+      --font-sans:        'Inter', system-ui, sans-serif;
+      --font-mono:        'JetBrains Mono', 'Fira Code', monospace;
+
+      /* Animation */
+      --dur-fast:         150ms;
+      --dur-normal:       300ms;
+      --dur-slow:         500ms;
+      --ease-out:         cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-spring:      cubic-bezier(0.34, 1.56, 0.64, 1);
+
+      /* Sidebar */
+      --sidebar-width:    220px;
+      --sidebar-collapsed: 60px;
+    }
+
+    /* ─── RESET & BASE ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--surface);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      overflow-x: hidden;
+      /* Noise grain texture */
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    }
+
+    /* ─── TYPOGRAPHY ─── */
+    h1, h2, h3 {
+      font-family: var(--font-serif);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .mono { font-family: var(--font-mono); }
+    .serif { font-family: var(--font-serif); }
+
+    /* ─── LAYOUT: SIDEBAR + MAIN ─── */
+    .app-shell {
+      display: block;
+      min-height: 100dvh;
+      min-height: 100vh;
+    }
+
+    /* ─── SIDEBAR ─── */
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: var(--sidebar-width);
+      height: 100dvh;
+      height: 100vh;
+      background: var(--surface-card);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+      overflow: hidden;
+    }
+
+    .sidebar-logo {
+      padding: 1.5rem 1.25rem 1.25rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .sidebar-logo .wordmark {
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.03em;
+    }
+
+    .sidebar-logo .tagline {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      margin-top: 0.2rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 1rem 0;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 1.25rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-left: 2px solid transparent;
+      transition: color var(--dur-fast) var(--ease-out),
+                  background var(--dur-fast) var(--ease-out),
+                  border-color var(--dur-fast) var(--ease-out);
+      user-select: none;
+    }
+
+    .nav-item:hover {
+      color: var(--text-primary);
+      background: var(--surface-hover);
+    }
+
+    .nav-item.active {
+      color: var(--text-primary);
+      border-left-color: var(--accent);
+      background: var(--accent-glow);
+    }
+
+    .nav-item svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+
+    .nav-item.active svg { opacity: 1; }
+
+    .sidebar-footer {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* ─── MAIN CONTENT ─── */
+    .main-content {
+      margin-left: var(--sidebar-width);
+      min-height: 100dvh;
+      min-height: 100vh;
+    }
+
+    /* ─── HERO SECTION: SPLIT LAYOUT ─── */
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 0;
+      min-height: 420px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .hero-left {
+      padding: 4rem 2.5rem 4rem 3rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      border-right: 1px solid var(--border-subtle);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-left::before {
+      content: '';
+      position: absolute;
+      top: -60px;
+      left: -60px;
+      width: 320px;
+      height: 320px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-right {
+      padding: 4rem 2.5rem 4rem 2.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      background: var(--surface-card);
+    }
+
+    .hero-kicker {
+      font-size: 0.7rem;
+      font-family: var(--font-sans);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    .hero-title {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 2.8vw, 2.5rem);
+      font-weight: 700;
+      line-height: 1.15;
+      color: var(--text-primary);
+      letter-spacing: -0.03em;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .hero-title em {
+      font-style: italic;
+      color: var(--text-secondary);
+    }
+
+    .hero-subtitle {
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 100%;
+    }
+
+    .hero-stats {
+      display: flex;
+      gap: 2rem;
+      margin-top: 2.5rem;
+    }
+
+    .hero-stat-num {
+      font-family: var(--font-serif);
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: block;
+      line-height: 1;
+    }
+
+    .hero-stat-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 0.2rem;
+      display: block;
+    }
+
+    /* ─── SMART INPUT FORM ─── */
+    .form-label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .input-wrapper {
+      position: relative;
+    }
+
+    .smart-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 7rem 0.75rem 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color var(--dur-normal) var(--ease-out),
+                  box-shadow var(--dur-normal) var(--ease-out);
+    }
+
+    .smart-input:focus {
+      border-color: var(--accent-border);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .smart-input:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .smart-input::placeholder { color: var(--text-muted); }
+
+    .hint-badge {
+      position: absolute;
+      right: 0.5rem;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.65rem;
+      font-family: var(--font-sans);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid var(--accent-border);
+      white-space: nowrap;
+      display: none;
+    }
+
+    .hint-badge.visible { display: block; }
+
+    .chain-select {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.7rem 1rem;
+      font-family: var(--font-sans);
+      font-size: 0.8125rem;
+      color: var(--text-primary);
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23606060' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.75rem center;
+      transition: border-color var(--dur-fast) var(--ease-out);
+    }
+
+    .chain-select:focus {
+      border-color: var(--accent-border);
+      outline: none;
+    }
+
+    .chain-select:disabled { opacity: 0.5; cursor: not-allowed; }
+    .chain-select option { background: var(--surface-raised); }
+
+    .audit-btn {
+      width: 100%;
+      padding: 0.8rem 1.5rem;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: oklch(0.96 0.005 75);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: background var(--dur-fast) var(--ease-out),
+                  transform var(--dur-fast) var(--ease-spring),
+                  box-shadow var(--dur-fast) var(--ease-out);
+    }
+
+    .audit-btn:hover {
+      background: oklch(0.62 0.10 287);
+      box-shadow: 0 4px 16px var(--accent-glow);
+      transform: translateY(-1px);
+    }
+
+    .audit-btn:hover .btn-arrow {
+      transform: translateX(3px);
+    }
+
+    .btn-arrow {
+      transition: transform var(--dur-fast) var(--ease-spring);
+    }
+
+    .audit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* ─── SECTION COMMON ─── */
+    .section {
+      padding: 4rem 3rem;
+    }
+
+    .section-heading {
+      font-family: var(--font-serif);
+      font-size: clamp(1.4rem, 2.5vw, 1.9rem);
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.03em;
+    }
+
+    .section-sub {
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      margin-top: 0.35rem;
+    }
+
+    /* ─── SCORE DISPLAY (negative space anchored right) ─── */
+    .score-section {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 2.5rem;
+      align-items: start;
+    }
+
+    .score-ring-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      padding-left: 1.5rem;
+      border-left: 1px solid var(--border-subtle);
+    }
+
+    .score-ring {
+      position: relative;
+      width: 140px;
+      height: 140px;
+    }
+
+    .score-ring svg { transform: rotate(-90deg); }
+
+    .score-ring-track {
+      fill: none;
+      stroke: var(--border);
+      stroke-width: 8;
+    }
+
+    .score-ring-fill {
+      fill: none;
+      stroke-width: 8;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 1.2s var(--ease-out);
+    }
+
+    .score-number {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .score-num-val {
+      font-family: var(--font-serif);
+      font-size: 2.4rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .score-num-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    /* ─── AGENT HEADER CARD ─── */
+    .agent-header {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .agent-address {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      color: var(--text-primary);
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .badge-pill.safe {
+      background: var(--safe-dim);
+      color: var(--safe);
+      border: 1px solid oklch(0.68 0.14 150 / 0.3);
+    }
+    .badge-pill.caution {
+      background: var(--caution-dim);
+      color: var(--caution);
+      border: 1px solid oklch(0.75 0.14 85 / 0.3);
+    }
+    .badge-pill.blocklist {
+      background: var(--blocklist-dim);
+      color: var(--blocklist);
+      border: 1px solid oklch(0.60 0.18 27 / 0.3);
+    }
+    .badge-pill.chain {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid var(--accent-border);
+    }
+
+    /* ─── BREAKDOWN: STAGGERED COLUMNS ─── */
+    .breakdown-section {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .breakdown-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem 2rem;
+      margin-top: 1.25rem;
+    }
+
+    .breakdown-item {}
+
+    .breakdown-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.45rem;
+    }
+
+    .breakdown-score {
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .breakdown-bar-track {
+      height: 4px;
+      background: var(--border);
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+
+    .breakdown-bar-fill {
+      height: 100%;
+      border-radius: 9999px;
+      background: var(--safe);
+      transition: width 1s var(--ease-out);
+      width: 0%;
+    }
+
+    /* ─── BREAKOUT BAND (flags) ─── */
+    .flags-band {
+      background: var(--surface-raised);
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 3rem;
+      /* Breakout: full width minus sidebar */
+      margin: 0 -3rem;
+      padding-left: 3rem;
+      padding-right: 3rem;
+    }
+
+    .flags-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+    }
+
+    .flag-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 0.75rem;
+      align-items: start;
+      padding: 0.875rem 1rem;
+      background: var(--surface-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      cursor: default;
+      transition: background var(--dur-fast) var(--ease-out),
+                  box-shadow var(--dur-fast) var(--ease-out),
+                  transform var(--dur-fast) var(--ease-out);
+    }
+
+    .flag-item:hover {
+      background: var(--surface-hover);
+      box-shadow: 0 4px 20px oklch(0 0 0 / 0.4);
+      transform: translateY(-1px);
+    }
+
+    .severity-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      font-family: var(--font-sans);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      white-space: nowrap;
+      margin-top: 0.1rem;
+    }
+
+    .severity-critical { background: var(--blocklist-dim); color: var(--blocklist); border: 1px solid oklch(0.60 0.18 27 / 0.3); }
+    .severity-high     { background: var(--caution-dim);   color: var(--caution);   border: 1px solid oklch(0.75 0.14 85 / 0.3); }
+    .severity-medium   { background: oklch(0.55 0.10 287 / 0.12); color: var(--accent); border: 1px solid var(--accent-border); }
+    .severity-low      { background: oklch(0.20 0.003 260 / 0.8); color: var(--text-muted); border: 1px solid var(--border); }
+
+    .flag-desc {
+      font-size: 0.8125rem;
+      color: var(--text-primary);
+      line-height: 1.5;
+    }
+
+    .flag-evidence {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      margin-top: 0.25rem;
+    }
+
+    /* ─── SUMMARY ─── */
+    .summary-block {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 10px 10px 0;
+      padding: 1.25rem 1.5rem;
+    }
+
+    .summary-text {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+
+    .timestamp {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      margin-top: 0.75rem;
+    }
+
+    /* ─── TRANSACTION TABLE: CONTAINED ISLAND ─── */
+    .table-section {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .table-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .table-title {
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .table-count {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead th {
+      padding: 0.6rem 1rem;
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      text-align: left;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--surface-raised);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border-subtle);
+      transition: background var(--dur-fast) var(--ease-out);
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+
+    tbody tr:hover { background: var(--surface-hover); }
+
+    tbody td {
+      padding: 0.65rem 1rem;
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+    }
+
+    tbody td.mono-cell {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    .tx-hash-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      transition: color var(--dur-fast);
+    }
+
+    .tx-hash-link:hover { color: oklch(0.68 0.10 287); }
+
+    /* ─── LOADING SKELETON ─── */
+    .skeleton {
+      background: linear-gradient(
+        90deg,
+        var(--surface-raised) 0%,
+        var(--surface-hover) 40%,
+        var(--surface-raised) 80%
+      );
+      background-size: 300% 100%;
+      animation: shimmer 1.6s infinite linear;
+      border-radius: 6px;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+
+    .skeleton-line { height: 12px; margin-bottom: 0.5rem; }
+    .skeleton-block { height: 80px; margin-bottom: 0.75rem; border-radius: 8px; }
+
+    .loading-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+    }
+
+    .loading-hint {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: 1.5rem;
+    }
+
+    /* ─── ERROR STATE ─── */
+    .error-card {
+      background: oklch(0.60 0.18 27 / 0.06);
+      border: 1px solid oklch(0.60 0.18 27 / 0.35);
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+
+    .error-icon {
+      color: var(--blocklist);
+      flex-shrink: 0;
+      margin-top: 0.1rem;
+    }
+
+    .error-title {
+      font-family: var(--font-serif);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--blocklist);
+    }
+
+    .error-msg {
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      margin-top: 0.35rem;
+    }
+
+    /* ─── STATE DEMO CONTROLS ─── */
+    .demo-bar {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 100;
+      display: flex;
+      gap: 0.4rem;
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 9999px;
+      padding: 0.35rem 0.5rem;
+    }
+
+    .demo-btn {
+      padding: 0.3rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border: none;
+      cursor: pointer;
+      background: transparent;
+      color: var(--text-muted);
+      transition: background var(--dur-fast) var(--ease-out),
+                  color var(--dur-fast) var(--ease-out);
+    }
+
+    .demo-btn:hover { color: var(--text-primary); }
+
+    .demo-btn.active {
+      background: var(--accent);
+      color: oklch(0.96 0.005 75);
+    }
+
+    /* ─── DNA BADGE ─── */
+    .dna-badge {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      z-index: 100;
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.65rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+    }
+
+    .dna-badge span {
+      color: var(--accent);
+    }
+
+    /* ─── SCROLL ANIMATIONS ─── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(18px);
+      transition: opacity var(--dur-slow) var(--ease-out),
+                  transform var(--dur-slow) var(--ease-out);
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .reveal-delay-1 { transition-delay: 100ms; }
+    .reveal-delay-2 { transition-delay: 200ms; }
+    .reveal-delay-3 { transition-delay: 300ms; }
+    .reveal-delay-4 { transition-delay: 400ms; }
+
+    /* ─── EMPTY STATE ─── */
+    .empty-hint {
+      padding: 3rem 2rem;
+      text-align: center;
+    }
+
+    .empty-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 1rem;
+      color: var(--text-muted);
+      opacity: 0.5;
+    }
+
+    .empty-title {
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+    }
+
+    .empty-body {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+
+    /* ─── MOBILE ─── */
+    @media (max-width: 768px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        flex-direction: row;
+        align-items: center;
+        padding: 0;
+      }
+
+      .sidebar-logo { padding: 0.75rem 1rem; border-bottom: none; border-right: 1px solid var(--border-subtle); }
+      .sidebar-nav { display: flex; flex-direction: row; padding: 0; }
+      .sidebar-footer { display: none; }
+      .nav-item { padding: 0.75rem 0.75rem; border-left: none; border-bottom: 2px solid transparent; flex-direction: column; gap: 0.2rem; font-size: 0.65rem; }
+      .nav-item.active { border-bottom-color: var(--accent); background: transparent; }
+
+      .main-content { margin-left: 0; }
+
+      .hero {
+        grid-template-columns: 1fr;
+        min-height: auto;
+      }
+
+      .hero-left {
+        padding: 3rem 1.5rem 2rem;
+        border-right: none;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+
+      .hero-right { padding: 2rem 1.5rem 3rem; }
+
+      .hero-left::before { display: none; }
+
+      .section { padding: 3rem 1.5rem; }
+
+      .score-section { grid-template-columns: 1fr; }
+
+      .score-ring-container { border-left: none; border-top: 1px solid var(--border-subtle); padding-top: 1.5rem; padding-left: 0; }
+
+      .breakdown-grid { grid-template-columns: 1fr; }
+
+      .flags-band { margin: 0 -1.5rem; padding: 2.5rem 1.5rem; }
+
+      .demo-bar { top: auto; bottom: 4rem; right: 50%; transform: translateX(50%); }
+    }
+
+    /* ─── REDUCED MOTION ─── */
+    @media (prefers-reduced-motion: reduce) {
+      .reveal {
+        opacity: 1;
+        transform: none;
+        transition: none;
+      }
+      .skeleton { animation: none; background: var(--surface-hover); }
+      .breakdown-bar-fill { transition: none; }
+      .score-ring-fill { transition: none; }
+      .audit-btn:hover { transform: none; }
+      .flag-item:hover { transform: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- DNA Badge -->
+  <div class="dna-badge">DNA — <span>A·S·S·N·X</span></div>
+
+  <!-- State Demo Controls -->
+  <div class="demo-bar" role="group" aria-label="Demo state toggle">
+    <button class="demo-btn active" data-state="empty"   onclick="setState('empty')">Empty</button>
+    <button class="demo-btn"        data-state="loading" onclick="setState('loading')">Loading</button>
+    <button class="demo-btn"        data-state="results" onclick="setState('results')">Results</button>
+    <button class="demo-btn"        data-state="error"   onclick="setState('error')">Error</button>
+  </div>
+
+  <!-- App Shell -->
+  <div class="app-shell">
+
+    <!-- ═══════════════════════════════════════ -->
+    <!-- SIDEBAR NAVIGATION -->
+    <!-- ═══════════════════════════════════════ -->
+    <aside class="sidebar" role="navigation" aria-label="Primary navigation">
+      <div class="sidebar-logo">
+        <div class="wordmark">AgentAuditor</div>
+        <div class="tagline">Trust Intelligence</div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-item active" tabindex="0" role="button" aria-current="page">
+          <!-- Dashboard icon -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          </svg>
+          <span>Dashboard</span>
+        </div>
+
+        <div class="nav-item" tabindex="0" role="button">
+          <!-- History icon -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 7v5l3 3"/>
+          </svg>
+          <span>History</span>
+        </div>
+
+        <div class="nav-item" tabindex="0" role="button">
+          <!-- Settings icon -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span>Settings</span>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        v0.4.2-beta
+      </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════ -->
+    <!-- MAIN CONTENT -->
+    <!-- ═══════════════════════════════════════ -->
+    <main class="main-content">
+
+      <!-- ─── HERO: SPLIT LAYOUT ─── -->
+      <section class="hero" aria-label="Agent Auditor — audit submission">
+
+        <!-- Left: Branding -->
+        <div class="hero-left">
+          <p class="hero-kicker">Forensic Trust Analysis</p>
+          <h1 class="hero-title">
+            Know every agent<br /><em>before you trust it.</em>
+          </h1>
+          <p class="hero-subtitle">
+            Real-time onchain trust scoring across EVM chains. Transaction patterns, fund flows, contract interactions — distilled into one authoritative score.
+          </p>
+          <div class="hero-stats" aria-label="Platform statistics">
+            <div>
+              <span class="hero-stat-num">84k+</span>
+              <span class="hero-stat-label">Agents scored</span>
+            </div>
+            <div>
+              <span class="hero-stat-num">7</span>
+              <span class="hero-stat-label">EVM chains</span>
+            </div>
+            <div>
+              <span class="hero-stat-num">4.1B</span>
+              <span class="hero-stat-label">Txns analyzed</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Input Form -->
+        <div class="hero-right" role="search" aria-label="Agent lookup form">
+          <h2 style="font-family: var(--font-serif); font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 1.75rem; letter-spacing: -0.02em;">
+            Run an audit
+          </h2>
+
+          <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+            <!-- Smart Input -->
+            <div>
+              <label class="form-label" for="agent-input">Agent identifier</label>
+              <div class="input-wrapper">
+                <input
+                  type="text"
+                  id="agent-input"
+                  class="smart-input"
+                  placeholder="Enter Agent ID, address, or name..."
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-label="Enter Agent ID, address, or ENS name"
+                />
+                <span class="hint-badge" id="hint-badge" aria-live="polite"></span>
+              </div>
+            </div>
+
+            <!-- Chain Selector -->
+            <div>
+              <label class="form-label" for="chain-select">Network scope</label>
+              <select id="chain-select" class="chain-select" aria-label="Select chain">
+                <option value="all">All Chains</option>
+                <option value="base">Base</option>
+                <option value="gnosis">Gnosis</option>
+                <option value="ethereum">Ethereum</option>
+                <option value="arbitrum">Arbitrum</option>
+                <option value="optimism">Optimism</option>
+                <option value="polygon">Polygon</option>
+              </select>
+            </div>
+
+            <!-- Submit -->
+            <button class="audit-btn" id="audit-btn" aria-label="Run audit">
+              Audit this agent
+              <svg class="btn-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── DYNAMIC CONTENT AREA ─── -->
+      <div id="content-area">
+
+        <!-- ══ STATE: EMPTY ══ -->
+        <div id="state-empty">
+          <div class="section">
+            <div class="empty-hint" aria-label="Awaiting input">
+              <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35"/>
+              </svg>
+              <h2 class="empty-title">No agent selected</h2>
+              <p class="empty-body">Enter an Agent ID, wallet address, or ENS name above to begin a forensic audit.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ STATE: LOADING ══ -->
+        <div id="state-loading" style="display:none;">
+          <div class="section">
+            <div class="loading-card" aria-busy="true" aria-label="Fetching onchain data">
+              <!-- Skeleton shimmer blocks -->
+              <div style="display:grid; grid-template-columns: 1fr auto; gap: 2rem; align-items:start; margin-bottom:1.5rem;">
+                <div>
+                  <div class="skeleton skeleton-line" style="width:60%"></div>
+                  <div class="skeleton skeleton-line" style="width:40%; height:10px;"></div>
+                </div>
+                <div class="skeleton" style="width:120px; height:120px; border-radius:50%;"></div>
+              </div>
+              <div class="skeleton skeleton-block"></div>
+              <div class="skeleton skeleton-block" style="height:60px;"></div>
+              <div class="skeleton skeleton-line" style="width:80%;"></div>
+              <div class="skeleton skeleton-line" style="width:55%; height:10px;"></div>
+              <p class="loading-hint">Fetching onchain data and running analysis...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ STATE: RESULTS ══ -->
+        <div id="state-results" style="display:none;">
+
+          <!-- Section 1: Score display — asymmetric split, score anchored right -->
+          <div class="section reveal" id="results-score">
+            <div style="margin-bottom:1.5rem;">
+              <h2 class="section-heading">Trust Assessment</h2>
+              <p class="section-sub">Computed from 4 behavioral axes across the selected network scope.</p>
+            </div>
+
+            <!-- Agent Header Card -->
+            <div class="agent-header">
+              <div>
+                <span class="agent-address">0x71C7656EC7ab88b098defB751B7401B5f6d8976F</span>
+              </div>
+              <div style="display:flex; gap:0.5rem; align-items:center;">
+                <span class="badge-pill chain">Ethereum</span>
+                <span class="badge-pill safe">
+                  <svg width="7" height="7" viewBox="0 0 8 8" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="4"/></svg>
+                  Safe
+                </span>
+              </div>
+            </div>
+
+            <!-- Score: staggered columns with ring anchored right -->
+            <div class="score-section">
+              <div class="breakdown-section reveal reveal-delay-1">
+                <h3 style="font-family: var(--font-sans); font-size: 0.75rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted);">Score Breakdown</h3>
+                <div class="breakdown-grid">
+                  <!-- Axis 1 -->
+                  <div class="breakdown-item reveal reveal-delay-1">
+                    <div class="breakdown-label">
+                      <span>Transaction Patterns</span>
+                      <span class="breakdown-score" id="score-tx">0 / 25</span>
+                    </div>
+                    <div class="breakdown-bar-track">
+                      <div class="breakdown-bar-fill" id="bar-tx" data-target="84" style="background: var(--safe);"></div>
+                    </div>
+                  </div>
+                  <!-- Axis 2 -->
+                  <div class="breakdown-item reveal reveal-delay-2">
+                    <div class="breakdown-label">
+                      <span>Contract Interactions</span>
+                      <span class="breakdown-score" id="score-ci">0 / 25</span>
+                    </div>
+                    <div class="breakdown-bar-track">
+                      <div class="breakdown-bar-fill" id="bar-ci" data-target="72" style="background: var(--safe);"></div>
+                    </div>
+                  </div>
+                  <!-- Axis 3 -->
+                  <div class="breakdown-item reveal reveal-delay-3">
+                    <div class="breakdown-label">
+                      <span>Fund Flow</span>
+                      <span class="breakdown-score" id="score-ff">0 / 25</span>
+                    </div>
+                    <div class="breakdown-bar-track">
+                      <div class="breakdown-bar-fill" id="bar-ff" data-target="90" style="background: var(--safe);"></div>
+                    </div>
+                  </div>
+                  <!-- Axis 4 -->
+                  <div class="breakdown-item reveal reveal-delay-4">
+                    <div class="breakdown-label">
+                      <span>Behavioral Consistency</span>
+                      <span class="breakdown-score" id="score-bc">0 / 25</span>
+                    </div>
+                    <div class="breakdown-bar-track">
+                      <div class="breakdown-bar-fill" id="bar-bc" data-target="68" style="background: var(--caution);"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Score Ring — negative space, anchored right -->
+              <div class="score-ring-container reveal reveal-delay-2">
+                <div class="score-ring" role="meter" aria-valuenow="78" aria-valuemin="0" aria-valuemax="100" aria-label="Trust score: 78 out of 100">
+                  <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden="true">
+                    <circle class="score-ring-track" cx="70" cy="70" r="58" />
+                    <circle class="score-ring-fill" id="score-ring-fill"
+                      cx="70" cy="70" r="58"
+                      stroke="var(--safe)"
+                      stroke-dasharray="364.42"
+                      stroke-dashoffset="364.42"
+                    />
+                  </svg>
+                  <div class="score-number">
+                    <span class="score-num-val" id="score-display" style="color: var(--safe);">0</span>
+                    <span class="score-num-label">/100</span>
+                  </div>
+                </div>
+                <p style="font-size:0.7rem; color: var(--text-muted); text-align:center; font-family: var(--font-sans); text-transform: uppercase; letter-spacing: 0.08em;">Trust Score</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 2: Flags — Breakout Band -->
+          <div class="flags-band section reveal" id="results-flags">
+            <h2 class="section-heading">Risk Signals</h2>
+            <p class="section-sub">Behavioral anomalies and protocol deviations detected during analysis.</p>
+
+            <div class="flags-list">
+              <!-- Flag 1: Medium -->
+              <div class="flag-item reveal reveal-delay-1">
+                <span class="severity-badge severity-medium">Medium</span>
+                <div>
+                  <p class="flag-desc">Interaction with low-liquidity DEX pools detected on 3 occasions</p>
+                  <p class="flag-evidence">Evidence: 0x3a4f...8b21 — UniswapV3 pair TVL &lt; $12k at time of execution</p>
+                </div>
+                <span style="color: var(--text-muted); font-size: 0.75rem; font-family: var(--font-mono); white-space:nowrap;">3× observed</span>
+              </div>
+
+              <!-- Flag 2: Low -->
+              <div class="flag-item reveal reveal-delay-2">
+                <span class="severity-badge severity-low">Low</span>
+                <div>
+                  <p class="flag-desc">Minor deviation in behavioral consistency vs. 30-day baseline</p>
+                  <p class="flag-evidence">Window: Feb 14–21 — 8.3% increase in gas price tolerance</p>
+                </div>
+                <span style="color: var(--text-muted); font-size: 0.75rem; font-family: var(--font-mono); white-space:nowrap;">Baseline shift</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 3: Summary + Table — varied grid (alternating layout) -->
+          <div class="section reveal" id="results-summary" style="display:grid; grid-template-columns: 1fr 1.6fr; gap:2rem; align-items:start;">
+
+            <!-- Summary island -->
+            <div>
+              <h2 class="section-heading" style="margin-bottom: 1rem;">Analysis Summary</h2>
+              <div class="summary-block">
+                <p class="summary-text">
+                  This agent demonstrates consistent, well-patterned transaction behavior across 847 recorded interactions on Ethereum mainnet. Fund flows exhibit no mixer involvement or known exploit signatures. Two low-severity deviations were noted in Q1 2026 but fall within acceptable variance thresholds for autonomous trading agents.
+                </p>
+                <p class="timestamp">Analyzed 2026-03-20T14:37:09Z · 847 transactions · 6 contracts</p>
+              </div>
+            </div>
+
+            <!-- Transaction Table -->
+            <div>
+              <h2 class="section-heading" style="margin-bottom: 1rem;">Recent Transactions</h2>
+              <div class="table-section">
+                <div class="table-header">
+                  <span class="table-title">Transaction Log</span>
+                  <span class="table-count">Showing 5 of 847</span>
+                </div>
+                <div style="overflow-x:auto;">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col">Hash</th>
+                        <th scope="col">From</th>
+                        <th scope="col">To</th>
+                        <th scope="col">Value (ETH)</th>
+                        <th scope="col">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><a href="#" class="tx-hash-link" aria-label="View transaction 0x71C7...976F on explorer">0x71C7...976F</a></td>
+                        <td class="mono-cell">0x71C7...8976</td>
+                        <td class="mono-cell">0xUni3...pool</td>
+                        <td class="mono-cell">0.5000</td>
+                        <td style="color: var(--text-muted); font-size:0.75rem;">2m ago</td>
+                      </tr>
+                      <tr>
+                        <td><a href="#" class="tx-hash-link" aria-label="View transaction 0x3a4f...8b21 on explorer">0x3a4f...8b21</a></td>
+                        <td class="mono-cell">0x71C7...8976</td>
+                        <td class="mono-cell">0xAAVE...v3</td>
+                        <td class="mono-cell">1.2500</td>
+                        <td style="color: var(--text-muted); font-size:0.75rem;">18m ago</td>
+                      </tr>
+                      <tr>
+                        <td><a href="#" class="tx-hash-link" aria-label="View transaction 0xf09c...cc14 on explorer">0xf09c...cc14</a></td>
+                        <td class="mono-cell">0x71C7...8976</td>
+                        <td class="mono-cell">0xCurv...fin</td>
+                        <td class="mono-cell">&lt;0.001</td>
+                        <td style="color: var(--text-muted); font-size:0.75rem;">1h ago</td>
+                      </tr>
+                      <tr>
+                        <td><a href="#" class="tx-hash-link" aria-label="View transaction 0xb88e...1234 on explorer">0xb88e...1234</a></td>
+                        <td class="mono-cell">0x71C7...8976</td>
+                        <td class="mono-cell">0xComp...d</td>
+                        <td class="mono-cell">0.0000</td>
+                        <td style="color: var(--text-muted); font-size:0.75rem;">3h ago</td>
+                      </tr>
+                      <tr>
+                        <td><a href="#" class="tx-hash-link" aria-label="View transaction 0x29e1...ff02 on explorer">0x29e1...ff02</a></td>
+                        <td class="mono-cell">0x71C7...8976</td>
+                        <td class="mono-cell">0xUni3...pool</td>
+                        <td class="mono-cell">2.1800</td>
+                        <td style="color: var(--text-muted); font-size:0.75rem;">5h ago</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /state-results -->
+
+        <!-- ══ STATE: ERROR ══ -->
+        <div id="state-error" style="display:none;">
+          <div class="section">
+            <div class="error-card" role="alert">
+              <div class="error-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 8v4M12 16h.01"/>
+                </svg>
+              </div>
+              <div>
+                <p class="error-title">Analysis Failed</p>
+                <p class="error-msg">Failed to connect to analysis service. The agent indexer may be unavailable or the identifier format is unrecognized. Verify the address and retry.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /content-area -->
+    </main>
+  </div><!-- /app-shell -->
+
+  <script>
+    /* ─── STATE MANAGEMENT ─── */
+    const STATES = ['empty', 'loading', 'results', 'error'];
+    let currentState = 'empty';
+    let animationsTriggered = false;
+
+    function setState(name) {
+      if (!STATES.includes(name)) return;
+      currentState = name;
+
+      // Toggle panels
+      STATES.forEach(s => {
+        const el = document.getElementById('state-' + s);
+        if (el) el.style.display = s === name ? '' : 'none';
+      });
+
+      // Toggle demo buttons
+      document.querySelectorAll('.demo-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.state === name);
+      });
+
+      // Toggle input disabled states
+      const inputEl = document.getElementById('agent-input');
+      const chainEl = document.getElementById('chain-select');
+      const btnEl = document.getElementById('audit-btn');
+      const isLoading = name === 'loading';
+      if (inputEl) inputEl.disabled = isLoading;
+      if (chainEl) chainEl.disabled = isLoading;
+      if (btnEl) btnEl.disabled = isLoading;
+
+      // Trigger results animations
+      if (name === 'results') {
+        animationsTriggered = false;
+        setTimeout(() => {
+          animateScore(78);
+          animateBreakdowns();
+          setupObserver();
+        }, 80);
+      }
+    }
+
+    /* ─── SMART INPUT HINT ─── */
+    const inputEl = document.getElementById('agent-input');
+    const hintBadge = document.getElementById('hint-badge');
+
+    function detectInputType(val) {
+      if (!val) return null;
+      if (/^\d+$/.test(val.trim())) return 'Agent ID detected';
+      if (/^0x[0-9a-fA-F]{40}$/.test(val.trim())) return 'Address detected';
+      if (val.trim().endsWith('.eth')) return 'ENS name detected';
+      if (val.trim().length > 2) return 'Name search';
+      return null;
+    }
+
+    if (inputEl) {
+      inputEl.addEventListener('input', () => {
+        const hint = detectInputType(inputEl.value);
+        if (hint) {
+          hintBadge.textContent = hint;
+          hintBadge.classList.add('visible');
+        } else {
+          hintBadge.classList.remove('visible');
+        }
+      });
+
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && inputEl.value.trim()) {
+          setState('loading');
+          setTimeout(() => setState('results'), 2200);
+        }
+      });
+    }
+
+    const auditBtn = document.getElementById('audit-btn');
+    if (auditBtn) {
+      auditBtn.addEventListener('click', () => {
+        const val = inputEl ? inputEl.value.trim() : '';
+        if (val) {
+          setState('loading');
+          setTimeout(() => setState('results'), 2200);
+        }
+      });
+    }
+
+    /* ─── SCORE COUNTER ANIMATION ─── */
+    function animateScore(target) {
+      const displayEl = document.getElementById('score-display');
+      const ringEl = document.getElementById('score-ring-fill');
+      if (!displayEl || !ringEl) return;
+
+      const circumference = 364.42;
+      const start = performance.now();
+      const duration = 1200;
+
+      function tick(now) {
+        const t = Math.min((now - start) / duration, 1);
+        const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+        const val = Math.round(ease * target);
+        displayEl.textContent = val;
+
+        const offset = circumference - (ease * target / 100) * circumference;
+        ringEl.style.strokeDashoffset = offset;
+
+        if (t < 1) requestAnimationFrame(tick);
+      }
+
+      requestAnimationFrame(tick);
+    }
+
+    /* ─── BREAKDOWN BAR ANIMATIONS ─── */
+    function animateBreakdowns() {
+      const axes = [
+        { barId: 'bar-tx',  scoreId: 'score-tx', targetPct: 84, targetScore: 21 },
+        { barId: 'bar-ci',  scoreId: 'score-ci', targetPct: 72, targetScore: 18 },
+        { barId: 'bar-ff',  scoreId: 'score-ff', targetPct: 90, targetScore: 22 },
+        { barId: 'bar-bc',  scoreId: 'score-bc', targetPct: 68, targetScore: 17 },
+      ];
+
+      axes.forEach(({ barId, scoreId, targetPct, targetScore }, i) => {
+        setTimeout(() => {
+          const bar = document.getElementById(barId);
+          const scoreEl = document.getElementById(scoreId);
+          if (!bar || !scoreEl) return;
+
+          const start = performance.now();
+          const duration = 800;
+
+          function tick(now) {
+            const t = Math.min((now - start) / duration, 1);
+            const ease = 1 - Math.pow(1 - t, 3);
+            bar.style.width = (ease * targetPct) + '%';
+            scoreEl.textContent = Math.round(ease * targetScore) + ' / 25';
+            if (t < 1) requestAnimationFrame(tick);
+          }
+
+          requestAnimationFrame(tick);
+        }, i * 120);
+      });
+    }
+
+    /* ─── INTERSECTION OBSERVER: SCROLL REVEALS ─── */
+    function setupObserver() {
+      const els = document.querySelectorAll('#state-results .reveal');
+      if (!els.length) return;
+
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+
+      els.forEach(el => observer.observe(el));
+    }
+
+    /* ─── NAV ITEM INTERACTION ─── */
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        item.classList.add('active');
+      });
+
+      item.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          item.click();
+        }
+      });
+    });
+
+    // Initialize
+    setState('empty');
+  </script>
+</body>
+</html>

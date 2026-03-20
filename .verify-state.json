@@ -1,0 +1,19 @@
+{
+  "milestones": [
+    {
+      "phase": "0-7",
+      "completion": 100,
+      "drift": "minor",
+      "demo_path": "on_track",
+      "kz_warnings": ["KZ-2: submission form not yet opened"],
+      "decision": "PROCEED",
+      "timestamp": "2026-03-20T08:00:00Z"
+    }
+  ],
+  "status": "proceed",
+  "verifyState": {
+    "status": "ship",
+    "winnerReadiness": null,
+    "killZonesTriggered": 0
+  }
+}
