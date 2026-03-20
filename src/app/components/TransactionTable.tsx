@@ -43,45 +43,69 @@ export function TransactionTable({ transactions, chainId }: TransactionTableProp
 
   if (transactions.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-surface-raised p-6 text-center text-text-secondary">
-        No transactions found
+      <div className="aa-table-section">
+        <div className="aa-table-header">
+          <span className="aa-table-title">Recent Transactions</span>
+          <span className="aa-table-count">0 transactions</span>
+        </div>
+        <div
+          style={{
+            padding: "3rem 2rem",
+            textAlign: "center",
+            color: "#5a5650",
+            fontSize: "0.8125rem",
+          }}
+        >
+          No transactions found for this agent.
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised overflow-hidden">
-      <h3 className="px-4 py-3 text-sm font-medium text-text-secondary border-b border-border">
-        Recent Transactions
-      </h3>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+    <div className="aa-table-section">
+      <div className="aa-table-header">
+        <span className="aa-table-title">Recent Transactions</span>
+        <span className="aa-table-count">{transactions.length} transactions</span>
+      </div>
+      <div className="aa-table-wrap">
+        <table className="aa-table" aria-label="Transaction history">
           <thead>
-            <tr className="border-b border-border text-left text-text-secondary">
-              <th className="px-4 py-2 font-medium">Hash</th>
-              <th className="px-4 py-2 font-medium">From</th>
-              <th className="px-4 py-2 font-medium">To</th>
-              <th className="px-4 py-2 font-medium text-right">Value (ETH)</th>
-              <th className="px-4 py-2 font-medium text-right">Time</th>
+            <tr>
+              <th scope="col">Hash</th>
+              <th scope="col">From</th>
+              <th scope="col">To</th>
+              <th scope="col" style={{ textAlign: "right" }}>Value (ETH)</th>
+              <th scope="col" style={{ textAlign: "right" }}>Time</th>
             </tr>
           </thead>
           <tbody>
             {transactions.map((tx) => (
-              <tr key={tx.hash} className="border-b border-border/50 hover:bg-surface-hover">
-                <td className="px-4 py-2 font-mono">
+              <tr key={tx.hash}>
+                <td>
                   <a
                     href={`${explorerBase}/tx/${tx.hash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-accent hover:underline"
+                    className="aa-tx-hash"
+                    aria-label={`View transaction ${tx.hash} on explorer`}
                   >
                     {truncateHash(tx.hash)}
                   </a>
                 </td>
-                <td className="px-4 py-2 font-mono text-text-secondary">{truncateHash(tx.from)}</td>
-                <td className="px-4 py-2 font-mono text-text-secondary">{truncateHash(tx.to)}</td>
-                <td className="px-4 py-2 text-right">{formatValue(tx.value)}</td>
-                <td className="px-4 py-2 text-right text-text-secondary">
+                <td className="aa-mono-cell">{truncateHash(tx.from)}</td>
+                <td className="aa-mono-cell">{truncateHash(tx.to)}</td>
+                <td style={{ textAlign: "right", color: "#e8e5df", fontSize: "0.8125rem" }}>
+                  {formatValue(tx.value)}
+                </td>
+                <td
+                  style={{
+                    textAlign: "right",
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: "0.75rem",
+                    color: "#5a5650",
+                  }}
+                >
                   {new Date(tx.timestamp).toLocaleTimeString()}
                 </td>
               </tr>

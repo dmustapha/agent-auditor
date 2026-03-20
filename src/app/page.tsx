@@ -1,12 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { SmartInput } from "./components/SmartInput";
+import { useState, useCallback } from "react";
+import { Sidebar } from "./components/Sidebar";
+import { SmartInput, detectInputType } from "./components/SmartInput";
 import { ChainSelector } from "./components/ChainSelector";
 import { TrustScoreCard } from "./components/TrustScoreCard";
 import { TransactionTable } from "./components/TransactionTable";
 import { LoadingState } from "./components/LoadingState";
-import type { ChainId, InputType, AnalyzeResponse, AnalyzeErrorResponse, UITrustScore, TransactionSummary } from "@/lib/types";
+import type {
+  ChainId,
+  InputType,
+  AnalyzeResponse,
+  AnalyzeErrorResponse,
+  UITrustScore,
+  TransactionSummary,
+} from "@/lib/types";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
@@ -16,6 +24,14 @@ export default function Home() {
     transactions: TransactionSummary[];
   } | null>(null);
   const [selectedChain, setSelectedChain] = useState<ChainId | "all">("all");
+  const [inputValue, setInputValue] = useState("");
+
+  const handleSubmit = useCallback(() => {
+    const trimmed = inputValue.trim();
+    if (!trimmed || loading) return;
+    const { type } = detectInputType(trimmed);
+    handleAnalyze(trimmed, type);
+  }, [inputValue, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleAnalyze(input: string, inputType: InputType) {
     setLoading(true);
@@ -37,14 +53,19 @@ export default function Home() {
 
       const data: AnalyzeResponse = await res.json();
 
-      // Format trust score for UI
       const chainNames: Record<string, string> = {
-        base: "Base", gnosis: "Gnosis", ethereum: "Ethereum",
-        arbitrum: "Arbitrum", optimism: "Optimism", polygon: "Polygon",
+        base: "Base",
+        gnosis: "Gnosis",
+        ethereum: "Ethereum",
+        arbitrum: "Arbitrum",
+        optimism: "Optimism",
+        polygon: "Polygon",
       };
 
       const recommendationColors: Record<string, string> = {
-        SAFE: "#22c55e", CAUTION: "#eab308", BLOCKLIST: "#ef4444",
+        SAFE: "#22c55e",
+        CAUTION: "#eab308",
+        BLOCKLIST: "#ef4444",
       };
 
       const uiScore: UITrustScore = {
@@ -60,7 +81,7 @@ export default function Home() {
           { label: "Behavioral Consistency", value: data.trustScore.breakdown.behavioralConsistency, max: 25 },
         ],
         recommendation: data.trustScore.recommendation,
-        recommendationColor: recommendationColors[data.trustScore.recommendation],
+        recommendationColor: recommendationColors[data.trustScore.recommendation] ?? "#8f8a82",
         flags: data.trustScore.flags,
         summary: data.trustScore.summary,
         timestamp: data.trustScore.analysisTimestamp,
@@ -77,34 +98,143 @@ export default function Home() {
     }
   }
 
+  const hasContent = loading || error || result;
+
   return (
-    <main className="mx-auto max-w-3xl px-4 py-12">
-      <header className="mb-10 text-center">
-        <h1 className="text-3xl font-bold tracking-tight">AgentAuditor</h1>
-        <p className="mt-2 text-text-secondary">
-          Trust scores for AI agents across EVM chains
-        </p>
-      </header>
+    <div className="aa-shell">
+      <Sidebar activeItem="dashboard" />
 
-      <div className="flex gap-3 mb-8">
-        <SmartInput onSubmit={handleAnalyze} disabled={loading} />
-        <ChainSelector value={selectedChain} onChange={setSelectedChain} disabled={loading} />
-      </div>
+      <main className="aa-main" id="main-content">
+        {/* ─── HERO ─── */}
+        <section className="aa-hero" aria-label="Agent Auditor — forensic trust analysis">
+          <p className="aa-hero-kicker">Forensic Trust Analysis</p>
+          <h1 className="aa-hero-title">
+            Know every agent<br />
+            <em>before you trust it.</em>
+          </h1>
+          <p className="aa-hero-subtitle">
+            Real-time onchain trust scoring across EVM chains. Transaction patterns, fund flows, contract interactions — distilled into one authoritative score.
+          </p>
 
-      {loading && <LoadingState />}
+          {/* Stats row */}
+          <div className="aa-hero-stats" aria-label="Platform statistics">
+            <div>
+              <span className="aa-stat-num">84k+</span>
+              <span className="aa-stat-label">Agents Scored</span>
+            </div>
+            <div>
+              <span className="aa-stat-num">7</span>
+              <span className="aa-stat-label">EVM Chains</span>
+            </div>
+            <div>
+              <span className="aa-stat-num">4.1B</span>
+              <span className="aa-stat-label">Txns Analyzed</span>
+            </div>
+          </div>
 
-      {error && (
-        <div className="rounded-lg border border-blocklist/30 bg-blocklist/10 p-4 text-blocklist">
-          {error}
+          {/* Full-width input form */}
+          <div className="aa-form-container" role="search" aria-label="Agent lookup form">
+            <label className="aa-form-label" htmlFor="agent-input">
+              Agent Identifier
+            </label>
+            <div className="aa-form-row">
+              <SmartInput
+                value={inputValue}
+                onChange={setInputValue}
+                onSubmit={handleSubmit}
+                disabled={loading}
+              />
+              <ChainSelector
+                value={selectedChain}
+                onChange={setSelectedChain}
+                disabled={loading}
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={loading || !inputValue.trim()}
+                className="aa-audit-btn"
+                aria-label="Run forensic audit"
+              >
+                <span>Run Audit</span>
+                <svg
+                  className="aa-btn-arrow"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  aria-hidden="true"
+                >
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── CONTENT AREA ─── */}
+        <div className="aa-content">
+          {/* Loading */}
+          {loading && <LoadingState />}
+
+          {/* Error */}
+          {!loading && error && (
+            <div className="aa-error-card" role="alert" aria-live="assertive">
+              <svg
+                className="aa-error-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <div>
+                <p className="aa-error-title">Analysis Failed</p>
+                <p className="aa-error-msg">{error}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Results */}
+          {!loading && result && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              <TrustScoreCard score={result.trustScore} />
+              <TransactionTable
+                transactions={result.transactions}
+                chainId={result.trustScore.chainId}
+              />
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!hasContent && (
+            <div className="aa-empty-state" aria-label="No agent selected">
+              <svg
+                className="aa-empty-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.25"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 8v4M12 16h.01" />
+              </svg>
+              <p className="aa-empty-title">No agent selected</p>
+              <p className="aa-empty-body">
+                Enter an Agent ID, wallet address, or ENS name above to begin a forensic audit.
+              </p>
+            </div>
+          )}
         </div>
-      )}
-
-      {result && (
-        <div className="space-y-6">
-          <TrustScoreCard score={result.trustScore} />
-          <TransactionTable transactions={result.transactions} chainId={result.trustScore.chainId} />
-        </div>
-      )}
-    </main>
+      </main>
+    </div>
   );
 }

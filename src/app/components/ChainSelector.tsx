@@ -24,7 +24,8 @@ export function ChainSelector({ value, onChange, disabled }: ChainSelectorProps)
       value={value}
       onChange={(e) => onChange(e.target.value as ChainId | "all")}
       disabled={disabled}
-      className="rounded-lg border border-border bg-surface-raised px-3 py-3 text-text-primary focus:border-accent focus:outline-none disabled:opacity-50"
+      aria-label="Select blockchain network"
+      className="aa-chain-select"
     >
       {CHAIN_OPTIONS.map((opt) => (
         <option key={opt.value} value={opt.value}>
