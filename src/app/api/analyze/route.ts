@@ -5,6 +5,7 @@ import { fetchAgentData } from "@/lib/blockscout";
 import { getAgentIdentity } from "@/lib/erc8004";
 import { createVeniceClient, analyzeAgent, resolveModel, createMockTrustScore } from "@/lib/venice";
 import { validateTrustScore } from "@/lib/trust-score";
+import { analysisCache } from "@/lib/cache";
 
 const USE_MOCK = process.env.VENICE_MOCK === "true";
 
@@ -16,6 +17,13 @@ export async function POST(request: NextRequest) {
     if (!input || typeof input !== "string" || input.trim().length === 0) {
       return NextResponse.json(
         { error: "invalid_input", message: "Input is required" } satisfies AnalyzeErrorResponse,
+        { status: 400 },
+      );
+    }
+
+    if (input.trim().length > 200) {
+      return NextResponse.json(
+        { error: "invalid_input", message: "Input must be 200 characters or less" } satisfies AnalyzeErrorResponse,
         { status: 400 },
       );
     }
@@ -37,6 +45,11 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
+
+    // 2.5. Check cache
+    const cacheKey = `${resolved.address}:${resolved.chainId}`;
+    const cached = analysisCache.get(cacheKey);
+    if (cached) return NextResponse.json(cached);
 
     // 3. Fetch onchain data from resolved chain
     const agentData = await fetchAgentData(resolved.chainId, resolved.address);
@@ -83,8 +96,11 @@ export async function POST(request: NextRequest) {
       trustScore,
       agentIdentity,
       transactions: agentData.transactions.slice(0, 20),
+      totalTransactionCount: agentData.transactions.length,
+      walletClassification: agentData.computedMetrics?.walletClassification,
     };
 
+    analysisCache.set(cacheKey, response);
     return NextResponse.json(response);
   } catch (err) {
     console.error("[/api/analyze] Error:", err);

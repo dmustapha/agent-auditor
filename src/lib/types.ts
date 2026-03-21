@@ -330,6 +330,7 @@ export interface AnalyzeResponse {
   readonly agentIdentity: AgentIdentity | null;
   readonly transactions: readonly TransactionSummary[];
   readonly totalTransactionCount?: number;
+  readonly walletClassification?: WalletClassification;
 }
 
 export interface AnalyzeErrorResponse {

@@ -9,6 +9,7 @@ import { TrustScoreCard } from "./components/TrustScoreCard";
 import { TransactionTable } from "./components/TransactionTable";
 import { LoadingState } from "./components/LoadingState";
 import { AgentDirectory } from "./components/AgentDirectory";
+import { AgentGate } from "./components/AgentGate";
 import { useRecentAudits } from "@/hooks/useRecentAudits";
 import { useDirectory } from "@/hooks/useDirectory";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -21,6 +22,7 @@ import type {
   AnalyzeErrorResponse,
   UITrustScore,
   TransactionSummary,
+  WalletClassification,
 } from "@/lib/types";
 
 const VALID_CHAINS = new Set(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "all"]);
@@ -71,6 +73,9 @@ function Home() {
   const [loadingSteps, setLoadingSteps] = useState<Array<{ label: string; status: "pending" | "active" | "complete" }>>([]);
   const [activeFilter, setActiveFilter] = useState<AgentType | null>(null);
   const [sortField, setSortField] = useState<SortField>("score");
+  const [forceAnalysis, setForceAnalysis] = useState(false);
+  const [walletClassification, setWalletClassification] = useState<WalletClassification | null>(null);
+  const [hasAgentIdentity, setHasAgentIdentity] = useState(false);
   const { records: recentAudits, addAudit } = useRecentAudits();
   const { agents: directoryAgents, allAgents, loading: directoryLoading, error: directoryError, lastSynced } = useDirectory(activeFilter, sortField);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -90,6 +95,7 @@ function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setForceAnalysis(false);
 
     // Clear any prior timers
     stepTimersRef.current.forEach(clearTimeout);
@@ -125,6 +131,8 @@ function Home() {
       }
 
       const data: AnalyzeResponse = await res.json();
+      setWalletClassification(data.walletClassification ?? null);
+      setHasAgentIdentity(data.agentIdentity != null);
       const uiScore = formatForUI(data.trustScore);
 
       setLoadingSteps(prev => prev.map((s, i) =>
@@ -202,6 +210,22 @@ function Home() {
     }, []),
   });
 
+  const shouldGate =
+    walletClassification &&
+    walletClassification.humanScore > 70 &&
+    walletClassification.confidence !== "LOW" &&
+    !forceAnalysis;
+
+  function deriveBadge(
+    wc: WalletClassification | null,
+    hasIdentity: boolean,
+  ): "verified" | "detected" | "unclassified" | null {
+    if (hasIdentity) return "verified";
+    if (wc && wc.humanScore < 30) return "detected";
+    if (wc && wc.humanScore >= 30 && wc.humanScore <= 70) return "unclassified";
+    return null;
+  }
+
   const showHero = !result && !loading && !error;
   const hasContent = loading || error || result;
 
@@ -274,16 +298,16 @@ function Home() {
 
           <div className="aa-hero-stats" aria-label="Platform statistics">
             <div>
-              <HeroStatCounter end={84000} format={(v) => v >= 1000 ? `${Math.round(v / 1000)}k+` : `${v}`} />
-              <span className="aa-stat-label">Agents Scored</span>
+              <HeroStatCounter end={101} />
+              <span className="aa-stat-label">Agents Indexed</span>
             </div>
             <div>
               <HeroStatCounter end={7} />
               <span className="aa-stat-label">EVM Chains</span>
             </div>
             <div>
-              <HeroStatCounter end={41} format={(v) => `${(v / 10).toFixed(1)}B`} />
-              <span className="aa-stat-label">Txns Analyzed</span>
+              <span className="aa-stat-num">Live</span>
+              <span className="aa-stat-label">Analysis</span>
             </div>
           </div>
 
@@ -362,9 +386,23 @@ function Home() {
             </div>
           )}
 
-          {!loading && result && (
+          {!loading && shouldGate && walletClassification && (
+            <AgentGate
+              classification={walletClassification}
+              onAnalyzeAnyway={() => setForceAnalysis(true)}
+              onTryExample={() => {
+                setForceAnalysis(false);
+                setResult(null);
+                setWalletClassification(null);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+                setTimeout(() => inputRef.current?.focus(), 100);
+              }}
+            />
+          )}
+
+          {!loading && result && !shouldGate && (
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              <TrustScoreCard score={result.trustScore} />
+              <TrustScoreCard score={result.trustScore} badge={deriveBadge(walletClassification, hasAgentIdentity)} />
               <div className="aa-reveal aa-delay-5 visible">
                 <TransactionTable
                   transactions={result.transactions}

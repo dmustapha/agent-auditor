@@ -7,6 +7,7 @@ import type { UITrustScore, TrustFlag, AgentType } from "@/lib/types";
 
 interface TrustScoreCardProps {
   score: UITrustScore;
+  badge?: "verified" | "detected" | "unclassified" | null;
 }
 
 type Recommendation = "SAFE" | "CAUTION" | "BLOCKLIST";
@@ -388,7 +389,7 @@ function BreakdownBar({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function TrustScoreCard({ score }: TrustScoreCardProps) {
+export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
   const circumference = 2 * Math.PI * 60;
   const recommendation = score.recommendation as Recommendation;
   const strokeColor = RECOMMENDATION_COLOR[recommendation] ?? score.recommendationColor;
@@ -495,6 +496,24 @@ export function TrustScoreCard({ score }: TrustScoreCardProps) {
           {VERDICT_ICONS[recommendation]}
           {recommendation}
         </span>
+        {badge === "verified" && (
+          <span className="aa-trust-badge aa-trust-badge--verified">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1l3.09 6.26L22 8.27l-5 4.87 1.18 6.88L12 16.77l-6.18 3.25L7 13.14 2 8.27l6.91-1.01L12 1z"/></svg>
+            Verified Agent
+          </span>
+        )}
+        {badge === "detected" && (
+          <span className="aa-trust-badge aa-trust-badge--detected">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/></svg>
+            Detected Agent
+          </span>
+        )}
+        {badge === "unclassified" && (
+          <span className="aa-trust-badge aa-trust-badge--unclassified">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Unclassified
+          </span>
+        )}
       </div>
 
       {/* ── Agent Classification Panel ── */}
