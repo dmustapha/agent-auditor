@@ -128,5 +128,15 @@ export function formatForUI(score: TrustScore): UITrustScore {
     flags: score.flags,
     summary: score.summary,
     timestamp: score.analysisTimestamp,
+    agentType: score.agentType,
+    behavioralNarrative: score.behavioralNarrative,
+    performanceScore: score.performanceScore,
+    operationalPattern: score.operationalPattern,
+    financialSummary: score.financialSummary,
+    protocolsUsed: score.protocolsUsed,
+    funFact: score.funFact,
+    anomalies: score.anomalies,
+    isLikelyHumanWallet: score.isLikelyHumanWallet,
+    walletClassification: score.walletClassification,
   };
 }

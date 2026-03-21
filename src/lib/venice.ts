@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { ChainId, AgentTransactionData, AgentType, TrustScore, TrustFlag } from "./types";
+import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag } from "./types";
 import { sanitizeForPrompt } from "./sanitize";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -179,6 +179,7 @@ function normalizeVeniceResponse(
   raw: Record<string, unknown>,
   address: string,
   chainId: ChainId,
+  metrics?: AgentMetrics,
 ): TrustScore {
   // Handle alternate field names Venice models sometimes use
   const score = (raw.overallScore ?? raw.trustScore ?? raw.score ?? 50) as number;
@@ -224,6 +225,22 @@ function normalizeVeniceResponse(
   const opPattern = raw.operationalPattern as Record<string, unknown> | undefined;
   const finSummary = raw.financialSummary as Record<string, string> | undefined;
 
+  // Override Venice fabrications with locally computed ground truth
+  const computedFinancials = metrics ? {
+    totalGasSpentETH: (Number(metrics.totalGasSpentWei) / 1e18).toFixed(6),
+    netFlowETH: metrics.netFlowETH,
+    largestSingleTxETH: (Number(BigInt(metrics.largestSingleTxWei)) / 1e18).toFixed(6),
+  } : undefined;
+
+  const overriddenProtocols = metrics?.protocolsUsed.length
+    ? [...new Set([...metrics.protocolsUsed, ...(raw.protocolsUsed as string[] ?? [])])]
+    : (raw.protocolsUsed as string[] ?? []);
+
+  const walletClass = metrics?.walletClassification;
+  const humanWallet = walletClass
+    ? (walletClass.humanScore > 70 && !walletClass.isDefinitelyContract)
+    : (typeof raw.isLikelyHumanWallet === "boolean" ? raw.isLikelyHumanWallet : false);
+
   return {
     agentAddress: (raw.agentAddress as string | undefined) ?? address,
     chainId,
@@ -246,15 +263,16 @@ function normalizeVeniceResponse(
       peakHoursUTC: (opPattern?.peakHoursUTC as number[] | undefined) ?? [],
       consistencyScore: (opPattern?.consistencyScore as number | undefined) ?? 0,
     },
-    financialSummary: {
+    financialSummary: computedFinancials ?? {
       totalGasSpentETH: finSummary?.totalGasSpentETH ?? "0",
       netFlowETH: finSummary?.netFlowETH ?? "0",
       largestSingleTxETH: finSummary?.largestSingleTxETH ?? "0",
     },
-    protocolsUsed: (raw.protocolsUsed as string[] | undefined) ?? [],
+    protocolsUsed: overriddenProtocols,
     funFact: (raw.funFact as string | undefined) ?? "",
     anomalies: (raw.anomalies as string[] | undefined) ?? [],
-    isLikelyHumanWallet: typeof raw.isLikelyHumanWallet === "boolean" ? raw.isLikelyHumanWallet : false,
+    isLikelyHumanWallet: humanWallet,
+    walletClassification: walletClass,
   };
 }
 
@@ -411,7 +429,7 @@ ${JSON.stringify(sanitizedData.contractCalls.slice(-20), null, 2)}`;
   } catch {
     throw new Error("Venice returned invalid JSON. Please try again.");
   }
-  const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId);
+  const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId, data.computedMetrics);
 
   return normalized;
 }

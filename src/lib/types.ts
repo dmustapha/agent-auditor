@@ -243,6 +243,7 @@ export interface TrustScore {
   readonly funFact: string;
   readonly anomalies: readonly string[];
   readonly isLikelyHumanWallet: boolean;
+  readonly walletClassification?: WalletClassification;
 }
 
 export interface TrustFlag {
@@ -371,6 +372,7 @@ export interface UITrustScore {
   readonly funFact: string;
   readonly anomalies: readonly string[];
   readonly isLikelyHumanWallet: boolean;
+  readonly walletClassification?: WalletClassification;
 }
 
 // ─── Sidebar / localStorage Types ───────────────────────────────────────────
