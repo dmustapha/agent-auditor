@@ -25,6 +25,39 @@ import type {
 
 const VALID_CHAINS = new Set(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "all"]);
 
+const EXAMPLE_AGENTS = [
+  { label: "Uniswap V3 Router", address: "0xE592427A0AEce92De3Edee1F18E0157C05861564", chain: "ethereum" as ChainId },
+  { label: "Chainlink ETH/USD", address: "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419", chain: "ethereum" as ChainId },
+  { label: "jaredfromsubway.eth", address: "0x6b75d8AF000000e20B7a7DDf000Ba900b4009A80", chain: "ethereum" as ChainId },
+];
+
+function HeroStatCounter({ end, suffix = "", format }: { end: number; suffix?: string; format?: (v: number) => string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const counted = useRef(false);
+
+  useEffect(() => {
+    if (counted.current || !ref.current) return;
+    counted.current = true;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      ref.current.textContent = format ? format(end) : `${end}${suffix}`;
+      return;
+    }
+    const el = ref.current;
+    const duration = 1200;
+    const start = performance.now();
+    const step = (now: number) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const value = Math.round(eased * end);
+      el.textContent = format ? format(value) : `${value}${suffix}`;
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, [end, suffix, format]);
+
+  return <span ref={ref} className="aa-stat-num">0</span>;
+}
+
 function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -237,15 +270,15 @@ function Home() {
 
           <div className="aa-hero-stats" aria-label="Platform statistics">
             <div>
-              <span className="aa-stat-num">84k+</span>
+              <HeroStatCounter end={84000} format={(v) => v >= 1000 ? `${Math.round(v / 1000)}k+` : `${v}`} />
               <span className="aa-stat-label">Agents Scored</span>
             </div>
             <div>
-              <span className="aa-stat-num">7</span>
+              <HeroStatCounter end={7} />
               <span className="aa-stat-label">EVM Chains</span>
             </div>
             <div>
-              <span className="aa-stat-num">4.1B</span>
+              <HeroStatCounter end={41} format={(v) => `${(v / 10).toFixed(1)}B`} />
               <span className="aa-stat-label">Txns Analyzed</span>
             </div>
           </div>
@@ -259,6 +292,24 @@ function Home() {
               <p className="aa-kbd-hint">
                 <kbd className="aa-kbd">⌘K</kbd> to focus · <kbd className="aa-kbd">Esc</kbd> to clear
               </p>
+            )}
+            {showHero && (
+              <div className="aa-example-agents" aria-label="Example agents to try">
+                <span className="aa-example-label">Try an example:</span>
+                {EXAMPLE_AGENTS.map((ex) => (
+                  <button
+                    key={ex.address}
+                    className="aa-example-btn"
+                    onClick={() => {
+                      setInputValue(ex.address);
+                      setSelectedChain(ex.chain);
+                      runAudit(ex.address, ex.chain);
+                    }}
+                  >
+                    {ex.label}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
           {!showHero && (

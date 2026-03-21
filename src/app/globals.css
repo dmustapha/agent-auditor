@@ -1479,6 +1479,14 @@ body {
   outline-offset: 2px;
 }
 
+.aa-example-label {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 /* ─── INPUT VALIDATION ─── */
 .aa-smart-input--invalid {
   border-color: rgba(239, 68, 68, 0.5);
