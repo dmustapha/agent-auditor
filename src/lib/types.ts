@@ -346,6 +346,7 @@ export interface AnalyzeResponse {
   readonly transactions: readonly TransactionSummary[];
   readonly totalTransactionCount?: number;
   readonly walletClassification?: WalletClassification;
+  readonly successRate?: number;
 }
 
 export interface AnalyzeErrorResponse {
@@ -391,6 +392,7 @@ export interface UITrustScore {
   readonly isLikelyHumanWallet: boolean;
   readonly walletClassification?: WalletClassification;
   readonly activityProfile?: ActivityProfile;
+  readonly successRate?: number;
 }
 
 // ─── Sidebar / localStorage Types ───────────────────────────────────────────

@@ -69,6 +69,13 @@ const FLAG_CARD_CLASS: Record<TrustFlag["severity"], string> = {
   LOW:      "aa-flag-card aa-flag-low",
 };
 
+const BREAKDOWN_EXPLANATIONS: Record<string, string> = {
+  "Transaction Patterns": "Timing regularity, gas efficiency, volume consistency, and nonce sequence analysis",
+  "Contract Interactions": "Protocol diversity, verified vs unverified contracts, and proxy usage patterns",
+  "Fund Flow": "Source legitimacy, destination analysis, circular patterns, and sudden large transfers",
+  "Behavioral Consistency": "Alignment between declared purpose and actual on-chain behavior over time",
+};
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function formatIntervalHours(hours: number): string {
@@ -669,9 +676,33 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
                 animated={animated}
                 delay={i * 80}
               />
+              {BREAKDOWN_EXPLANATIONS[axis.label] && (
+                <p style={{
+                  fontSize: "0.7rem",
+                  color: "var(--color-text-dim)",
+                  margin: "0.15rem 0 0.5rem 0",
+                  maxWidth: "24rem",
+                  lineHeight: 1.3,
+                }}>
+                  {BREAKDOWN_EXPLANATIONS[axis.label]}
+                </p>
+              )}
             </div>
           ))}
         </div>
+        {score.successRate !== undefined && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem" }}>
+            <span style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: score.successRate >= 0.9 ? "#22c55e" : score.successRate >= 0.7 ? "#eab308" : "#ef4444",
+            }} />
+            <span style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
+              Success Rate: {(score.successRate * 100).toFixed(1)}%
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── Financial Intel ── */}

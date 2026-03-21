@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
       transactions: agentData.transactions.slice(0, 20),
       totalTransactionCount: agentData.transactions.length,
       walletClassification: agentData.computedMetrics?.walletClassification,
+      successRate: agentData.computedMetrics?.successRate,
     };
 
     analysisCache.set(cacheKey, response);
