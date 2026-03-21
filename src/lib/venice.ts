@@ -501,5 +501,12 @@ export function createMockTrustScore(
     funFact: `This mock agent has been analyzed ${txCount} transactions deep.`,
     anomalies: [],
     isLikelyHumanWallet: false,
+    walletClassification: {
+      isDefinitelyContract: false,
+      isERC4337: false,
+      humanScore: 20,
+      signals: ["Mock: assumed bot-like behavior"],
+      tier1Decisive: false,
+    },
   };
 }
