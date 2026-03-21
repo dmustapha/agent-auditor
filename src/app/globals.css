@@ -100,7 +100,8 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.6rem 1.25rem;
+  width: 100%;
+  padding: 0.6rem 1.25rem 0.6rem calc(1.25rem - 2px);
   font-size: 0.8125rem;
   font-weight: 500;
   color: #a8a29e;
@@ -404,7 +405,8 @@ body {
   display: none;
 }
 
-.aa-hero--collapsed::before {
+.aa-hero--collapsed::before,
+.aa-hero--collapsed::after {
   opacity: 0;
 }
 
@@ -464,6 +466,7 @@ body {
 /* ─── HERO ─── */
 .aa-hero {
   padding: 4rem 3rem 2rem;
+  border-top: 1px solid rgba(144, 112, 212, 0.15);
   border-bottom: 1px solid #1e1e22;
   position: relative;
   overflow: hidden;
@@ -473,11 +476,22 @@ body {
 .aa-hero::before {
   content: '';
   position: absolute;
-  top: -80px;
-  left: -60px;
-  width: 360px;
-  height: 360px;
-  background: radial-gradient(circle, rgba(144, 112, 212, 0.12) 0%, transparent 70%);
+  top: -120px;
+  left: -100px;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(144, 112, 212, 0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.aa-hero::after {
+  content: '';
+  position: absolute;
+  bottom: -140px;
+  right: -80px;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(180, 130, 200, 0.10) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -543,6 +557,7 @@ body {
   border: 1px solid #252529;
   border-radius: 12px;
   padding: 1.5rem;
+  box-shadow: inset 0 1px 0 rgba(144, 112, 212, 0.08);
 }
 
 .aa-form-label {
