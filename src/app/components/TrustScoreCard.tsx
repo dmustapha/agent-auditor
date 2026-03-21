@@ -23,6 +23,25 @@ const RECOMMENDATION_BADGE_CLASS: Record<Recommendation, string> = {
   BLOCKLIST: "aa-badge-pill aa-badge-blocklist",
 };
 
+const VERDICT_ICONS: Record<Recommendation, React.ReactNode> = {
+  SAFE: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  ),
+  CAUTION: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+      <path d="M12 9v4M12 17h.01" />
+      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+    </svg>
+  ),
+  BLOCKLIST: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" />
+    </svg>
+  ),
+};
+
 const AGENT_TYPE_META: Record<AgentType, { label: string; shape: string; color: string }> = {
   KEEPER:         { label: "Keeper",         shape: "hexagon",  color: "#9070d4" },
   ORACLE:         { label: "Oracle",         shape: "diamond",  color: "#60a5fa" },
@@ -160,6 +179,24 @@ function AgentTypeShape({ type }: { type: AgentType }) {
     circle: (
       <circle cx="14" cy="14" r="11" fill="none" stroke={meta.color} strokeWidth="1.5" />
     ),
+    shield: (
+      <path
+        d="M14 2L4 6v7c0 5.5 4.4 9.7 10 11 5.6-1.3 10-5.5 10-11V6L14 2z"
+        fill="none"
+        stroke={meta.color}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    ),
+    gear: (
+      <polygon
+        points="14,3 16,7 20,5 22,9 18,12 20,16 16,18 14,25 12,18 8,16 10,12 6,9 8,5 12,7"
+        fill="none"
+        stroke={meta.color}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    ),
   };
 
   return (
@@ -277,16 +314,17 @@ function ActivityHeatmap({ peakHours }: { peakHours: readonly number[] }) {
     const grid = gridRef.current;
     if (!grid) return;
     const cells = Array.from(grid.querySelectorAll<HTMLElement>(".aa-heatmap-cell"));
+    const timers: ReturnType<typeof setTimeout>[] = [];
     cells.forEach((cell, i) => {
       cell.style.opacity = "0";
-      const delay = i * 30;
-      setTimeout(() => {
+      timers.push(setTimeout(() => {
         cell.animate(
           [{ opacity: "0", transform: "scale(0.4)" }, { opacity: "1", transform: "scale(1)" }],
-          { duration: 250, delay: 0, easing: SPRING_EASING, fill: "forwards" }
+          { duration: 250, easing: SPRING_EASING, fill: "forwards" }
         );
-      }, delay);
+      }, i * 30));
     });
+    return () => timers.forEach(clearTimeout);
   }, [peakHours]);
 
   return (
@@ -359,6 +397,7 @@ export function TrustScoreCard({ score }: TrustScoreCardProps) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined!);
 
   const revealKey = `${score.address}-${score.score}`;
 
@@ -395,11 +434,14 @@ export function TrustScoreCard({ score }: TrustScoreCardProps) {
     try {
       await navigator.clipboard.writeText(score.address);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // Clipboard API unavailable
     }
   }, [score.address]);
+
+  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
   const strokeDashoffset = animated
     ? circumference - (score.score / score.maxScore) * circumference
@@ -450,6 +492,7 @@ export function TrustScoreCard({ score }: TrustScoreCardProps) {
           className={RECOMMENDATION_BADGE_CLASS[recommendation]}
           aria-label={`Recommendation: ${recommendation}`}
         >
+          {VERDICT_ICONS[recommendation]}
           {recommendation}
         </span>
       </div>
@@ -682,7 +725,9 @@ export function TrustScoreCard({ score }: TrustScoreCardProps) {
           <p className="aa-flags-label">Risk Signals — {score.flags.length} detected</p>
           <div className="aa-flags-list" role="list">
             {score.flags.map((flag, i) => (
-              <FlagCard key={i} flag={flag} />
+              <div key={i} className="aa-reveal" style={{ transitionDelay: `${i * 60}ms` }}>
+                <FlagCard flag={flag} />
+              </div>
             ))}
           </div>
         </div>
