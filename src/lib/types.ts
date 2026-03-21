@@ -30,6 +30,7 @@ export interface WalletClassification {
   readonly humanScore: number; // 0 (definitely agent) to 100 (definitely human)
   readonly signals: readonly string[];
   readonly tier1Decisive: boolean; // true if Tier 1 alone was enough
+  readonly confidence: "LOW" | "MEDIUM" | "HIGH";
 }
 
 // ─── Agent Classification ───────────────────────────────────────────────────

@@ -514,6 +514,7 @@ export function createMockTrustScore(
       humanScore: 20,
       signals: ["Mock: assumed bot-like behavior"],
       tier1Decisive: false,
+      confidence: "LOW",
     },
   };
 }

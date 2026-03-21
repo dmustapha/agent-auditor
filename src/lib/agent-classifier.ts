@@ -92,6 +92,7 @@ export function computeWalletClassification(
       humanScore: 0,
       signals,
       tier1Decisive: true,
+      confidence: computeConfidence(txs.length),
     };
   }
 
@@ -104,13 +105,20 @@ export function computeWalletClassification(
 
   if (txs.length < 3) {
     signals.push("Too few transactions for behavioral analysis");
-    return { isDefinitelyContract: false, isERC4337, humanScore: 50, signals, tier1Decisive: false };
+    return { isDefinitelyContract: false, isERC4337, humanScore: 50, signals, tier1Decisive: false, confidence: computeConfidence(txs.length) };
   }
 
   humanScore = applyMethodConcentration(txs, humanScore, signals);
   humanScore = applyIntervalVariance(txs, humanScore, signals);
   humanScore = applyHourEntropy(txs, humanScore, signals);
   humanScore = applyZeroValueRate(txs, humanScore, signals);
+
+  humanScore = applyCounterpartyConcentration(txs, humanScore, signals);
+  humanScore = applyContractVsEOARatio(txs, humanScore, signals);
+  humanScore = applyGasLimitConsistency(txs, humanScore, signals);
+  humanScore = applyValueEntropy(txs, humanScore, signals);
+  humanScore = applyNonceGapRate(txs, humanScore, signals);
+  humanScore = applyBurstDetection(txs, humanScore, signals);
 
   if (addressInfo?.ensName) {
     humanScore += 15;
@@ -119,7 +127,7 @@ export function computeWalletClassification(
 
   humanScore = Math.max(0, Math.min(100, humanScore));
 
-  return { isDefinitelyContract: false, isERC4337, humanScore, signals, tier1Decisive: false };
+  return { isDefinitelyContract: false, isERC4337, humanScore, signals, tier1Decisive: false, confidence: computeConfidence(txs.length) };
 }
 
 function applyMethodConcentration(
@@ -205,4 +213,177 @@ function applyZeroValueRate(
     return score - 10;
   }
   return score;
+}
+
+function applyCounterpartyConcentration(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  if (txs.length < 5) return score;
+  const counts: Record<string, number> = {};
+  for (const tx of txs) {
+    if (tx.to) {
+      const key = tx.to.toLowerCase();
+      counts[key] = (counts[key] || 0) + 1;
+    }
+  }
+  const total = txs.length;
+  const hhi = Object.values(counts).reduce((sum, c) => sum + (c / total) ** 2, 0);
+  if (hhi > 0.5) {
+    signals.push("Counterparty concentration very high (HHI > 0.5) — bot signal");
+    return score - 15;
+  }
+  if (hhi < 0.1) {
+    signals.push("Diverse counterparties (HHI < 0.1) — human signal");
+    return score + 10;
+  }
+  return score;
+}
+
+function applyContractVsEOARatio(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  if (txs.length < 5) return score;
+  const contractCalls = txs.filter(
+    (tx) => tx.methodId && tx.methodId !== "0x" && tx.methodId !== "0x00000000",
+  ).length;
+  const ratio = contractCalls / txs.length;
+  if (ratio > 0.9) {
+    signals.push(`Contract call ratio ${(ratio * 100).toFixed(0)}% — bot signal`);
+    return score - 15;
+  }
+  if (ratio < 0.5) {
+    signals.push(`Low contract call ratio ${(ratio * 100).toFixed(0)}% — human signal`);
+    return score + 10;
+  }
+  return score;
+}
+
+function applyGasLimitConsistency(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  if (txs.length < 10) return score;
+  const limits = txs
+    .filter((tx) => tx.gasLimit != null)
+    .map((tx) => Number(tx.gasLimit));
+  if (limits.length < 10) return score;
+  const mean = limits.reduce((a, b) => a + b, 0) / limits.length;
+  if (mean === 0) return score;
+  const variance = limits.reduce((sum, v) => sum + (v - mean) ** 2, 0) / limits.length;
+  const cv = Math.sqrt(variance) / mean;
+  if (cv < 0.1) {
+    signals.push(`Gas limit CV ${cv.toFixed(3)} — nearly identical, bot signal`);
+    return score - 10;
+  }
+  if (cv > 0.5) {
+    signals.push(`Gas limit CV ${cv.toFixed(3)} — varied, human signal`);
+    return score + 5;
+  }
+  return score;
+}
+
+function applyValueEntropy(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  if (txs.length < 10) return score;
+  const buckets = [0, 0, 0, 0, 0, 0, 0];
+  for (const tx of txs) {
+    const val = Number(BigInt(tx.value || "0")) / 1e18;
+    if (val === 0) buckets[0]++;
+    else if (val < 0.001) buckets[1]++;
+    else if (val < 0.01) buckets[2]++;
+    else if (val < 0.1) buckets[3]++;
+    else if (val < 1) buckets[4]++;
+    else if (val < 10) buckets[5]++;
+    else buckets[6]++;
+  }
+  const total = txs.length;
+  let entropy = 0;
+  for (const count of buckets) {
+    if (count > 0) {
+      const p = count / total;
+      entropy -= p * Math.log2(p);
+    }
+  }
+  if (entropy < 1.0) {
+    signals.push(`Low value entropy (${entropy.toFixed(2)}) — repetitive values, bot signal`);
+    return score - 10;
+  }
+  if (entropy > 2.5) {
+    signals.push(`High value entropy (${entropy.toFixed(2)}) — diverse values, human signal`);
+    return score + 5;
+  }
+  return score;
+}
+
+function applyNonceGapRate(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  const withNonce = txs.filter((tx) => tx.nonce != null);
+  if (withNonce.length < 10) return score;
+  const sorted = [...withNonce].sort((a, b) => a.nonce! - b.nonce!);
+  let gaps = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].nonce! - sorted[i - 1].nonce! > 1) gaps++;
+  }
+  const rate = gaps / withNonce.length;
+  if (rate === 0 && withNonce.length >= 50) {
+    signals.push("Zero nonce gaps across 50+ txs — bot signal");
+    return score - 5;
+  }
+  if (rate > 0.05) {
+    signals.push(`Nonce gap rate ${(rate * 100).toFixed(1)}% — human signal`);
+    return score + 5;
+  }
+  return score;
+}
+
+function applyBurstDetection(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  if (txs.length < 10) return score;
+  const sorted = [...txs].sort((a, b) => a.timestamp - b.timestamp);
+  const bursts: number[][] = [];
+  let currentBurst = [sorted[0].timestamp];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].timestamp - sorted[i - 1].timestamp < 60) {
+      currentBurst.push(sorted[i].timestamp);
+    } else {
+      if (currentBurst.length >= 2) bursts.push(currentBurst);
+      currentBurst = [sorted[i].timestamp];
+    }
+  }
+  if (currentBurst.length >= 2) bursts.push(currentBurst);
+  if (bursts.length < 3) return score;
+  const burstStarts = bursts.map((b) => b[0]);
+  const gaps: number[] = [];
+  for (let i = 1; i < burstStarts.length; i++) {
+    gaps.push(burstStarts[i] - burstStarts[i - 1]);
+  }
+  const meanGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  if (meanGap === 0) return score;
+  const gapVariance = gaps.reduce((sum, g) => sum + (g - meanGap) ** 2, 0) / gaps.length;
+  const gapCV = Math.sqrt(gapVariance) / meanGap;
+  if (gapCV < 0.3) {
+    signals.push(`Regular burst pattern (CV ${gapCV.toFixed(2)}) — bot signal`);
+    return score - 10;
+  }
+  return score;
+}
+
+function computeConfidence(txCount: number): "LOW" | "MEDIUM" | "HIGH" {
+  if (txCount < 10) return "LOW";
+  if (txCount <= 50) return "MEDIUM";
+  return "HIGH";
 }
