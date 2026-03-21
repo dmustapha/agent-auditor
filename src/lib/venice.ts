@@ -190,10 +190,17 @@ function normalizeVeniceResponse(
     fundFlow: Math.round(score * 0.22),
     behavioralConsistency: 0,
   };
-  // Ensure behavioralConsistency fills any gap so breakdown sums to score
-  const partial = (breakdown.transactionPatterns ?? 0) +
+  // Ensure breakdown sums to score — scale down if Venice returned inflated values
+  let partial = (breakdown.transactionPatterns ?? 0) +
     (breakdown.contractInteractions ?? 0) +
     (breakdown.fundFlow ?? 0);
+  if (partial > score) {
+    const scale = score / partial;
+    breakdown.transactionPatterns = Math.round((breakdown.transactionPatterns ?? 0) * scale);
+    breakdown.contractInteractions = Math.round((breakdown.contractInteractions ?? 0) * scale);
+    breakdown.fundFlow = Math.round((breakdown.fundFlow ?? 0) * scale);
+    partial = breakdown.transactionPatterns + breakdown.contractInteractions + breakdown.fundFlow;
+  }
   breakdown.behavioralConsistency = Math.max(0, Math.min(25, score - partial));
 
   // Normalize flags — may be string[] or object[]

@@ -89,7 +89,7 @@ export function computeWalletClassification(
     return {
       isDefinitelyContract: true,
       isERC4337,
-      humanScore: isERC4337 ? 30 : 0,
+      humanScore: 0,
       signals,
       tier1Decisive: true,
     };

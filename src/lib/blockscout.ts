@@ -175,27 +175,31 @@ export async function getEventLogs(
 export async function getAddressInfo(
   chainId: ChainId,
   address: string,
-): Promise<AddressInfo> {
-  const config = getChainConfig(chainId);
-  const url = `${config.blockscoutUrl}/addresses/${address}`;
-  const res = await rateLimitedFetch(chainId, url);
-  const data = (await res.json()) as Record<string, unknown>;
+): Promise<AddressInfo | null> {
+  try {
+    const config = getChainConfig(chainId);
+    const url = `${config.blockscoutUrl}/addresses/${address}`;
+    const res = await rateLimitedFetch(chainId, url);
+    const data = (await res.json()) as Record<string, unknown>;
 
-  const isContract = data.is_contract === true;
+    const isContract = data.is_contract === true;
 
-  return {
-    isContract,
-    addressType: isContract
-      ? data.token
-        ? "token"
-        : data.implementation_address
-          ? "proxy"
-          : "contract"
-      : "EOA",
-    implementationAddress: (data.implementation_address as string) ?? null,
-    ensName: (data.ens_domain_name as string) ?? null,
-    transactionsCount: parseInt(String(data.transactions_count ?? "0"), 10),
-  };
+    return {
+      isContract,
+      addressType: isContract
+        ? data.token
+          ? "token"
+          : data.implementation_address
+            ? "proxy"
+            : "contract"
+        : "EOA",
+      implementationAddress: (data.implementation_address as string) ?? null,
+      ensName: (data.ens_domain_name as string) ?? null,
+      transactionsCount: Number(data.transactions_count) || 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchAgentData(
@@ -213,7 +217,8 @@ export async function fetchAgentData(
       getAddressInfo(chainId, address),
     ]);
 
-  const computedMetrics = computeMetrics({ address, chainId, transactions, tokenTransfers, contractCalls, coinBalanceHistory, addressInfo });
+  const resolvedAddressInfo = addressInfo ?? undefined;
+  const computedMetrics = computeMetrics({ address, chainId, transactions, tokenTransfers, contractCalls, coinBalanceHistory, addressInfo: resolvedAddressInfo });
 
   return {
     address,
@@ -225,7 +230,7 @@ export async function fetchAgentData(
     smartContractData: smartContractData ?? undefined,
     coinBalanceHistory,
     eventLogs,
-    addressInfo,
+    addressInfo: resolvedAddressInfo,
   };
 }
 

@@ -4,10 +4,13 @@ import { classifyAgentType, detectERC4337, inferProtocols, computeWalletClassifi
 export function computeMetrics(data: Pick<AgentTransactionData, "address" | "chainId" | "transactions" | "tokenTransfers" | "contractCalls" | "coinBalanceHistory" | "addressInfo">): AgentMetrics {
   const { address, transactions } = data;
 
-  // Gas metrics
-  const gasValues = transactions.map(tx => Number(tx.gasUsed));
-  const totalGas = gasValues.reduce((sum, g) => sum + g, 0);
-  const avgGasPerTx = transactions.length > 0 ? totalGas / transactions.length : 0;
+  // Gas metrics (BigInt to avoid precision loss on high-volume agents)
+  const totalGasWei = transactions.reduce((sum, tx) => {
+    try { return sum + BigInt(tx.gasUsed); } catch { return sum; }
+  }, 0n);
+  const avgGasPerTx = transactions.length > 0
+    ? Number(totalGasWei / BigInt(transactions.length))
+    : 0;
 
   // Timestamps
   const timestamps = transactions.map(tx => tx.timestamp).sort((a, b) => a - b);
@@ -58,7 +61,7 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
 
   // Real success rate from Blockscout result field
   const successCount = transactions.filter(tx => tx.success).length;
-  const successRate = transactions.length > 0 ? successCount / transactions.length : 1.0;
+  const successRate = transactions.length > 0 ? successCount / transactions.length : 0;
 
   // Most called contracts (top 5)
   const contractCounts = new Map<string, number>();
@@ -84,13 +87,15 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
       const diff = latest - earliest;
       const sign = diff < 0n ? "-" : "";
       const abs = diff < 0n ? -diff : diff;
-      netFlowETH = `${sign}${(Number(abs) / 1e18).toFixed(6)}`;
+      const whole = abs / 1000000000000000000n;
+      const frac = abs % 1000000000000000000n;
+      netFlowETH = `${sign}${whole}.${frac.toString().padStart(18, "0").slice(0, 6)}`;
     } catch { /* non-numeric balance value from Blockscout, keep "0" */ }
   }
 
   return {
     avgGasPerTx,
-    totalGasSpentWei: totalGas.toString(),
+    totalGasSpentWei: totalGasWei.toString(),
     txFrequencyPerDay,
     activeHoursUTC,
     successRate,
