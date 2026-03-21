@@ -1,45 +1,28 @@
 "use client";
 
 import type { ChainId, TransactionSummary } from "@/lib/types";
+import { getChainConfig } from "@/lib/chains";
 
 interface TransactionTableProps {
   transactions: readonly TransactionSummary[];
   chainId: ChainId;
+  totalCount?: number;
 }
-
-const IS_TESTNET = process.env.NEXT_PUBLIC_USE_TESTNET === "true";
-
-const EXPLORER_URLS: Record<ChainId, string> = IS_TESTNET
-  ? {
-      base: "https://sepolia.basescan.org",
-      gnosis: "https://gnosis-chiado.blockscout.com",
-      ethereum: "https://sepolia.etherscan.io",
-      arbitrum: "https://sepolia.arbiscan.io",
-      optimism: "https://sepolia-optimism.etherscan.io",
-      polygon: "https://amoy.polygonscan.com",
-    }
-  : {
-      base: "https://basescan.org",
-      gnosis: "https://gnosisscan.io",
-      ethereum: "https://etherscan.io",
-      arbitrum: "https://arbiscan.io",
-      optimism: "https://optimistic.etherscan.io",
-      polygon: "https://polygonscan.com",
-    };
 
 function truncateHash(hash: string): string {
   return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
 }
 
 function formatValue(wei: string): string {
-  const eth = Number(wei) / 1e18;
+  const eth = Number(BigInt(wei)) / 1e18;
   if (eth === 0) return "0";
-  if (eth < 0.001) return "<0.001";
-  return eth.toFixed(4);
+  if (eth >= 0.001) return eth.toFixed(4);
+  if (eth >= 0.000001) return eth.toExponential(3);
+  return eth.toExponential(2);
 }
 
-export function TransactionTable({ transactions, chainId }: TransactionTableProps) {
-  const explorerBase = EXPLORER_URLS[chainId] ?? EXPLORER_URLS.base;
+export function TransactionTable({ transactions, chainId, totalCount }: TransactionTableProps) {
+  const explorerBase = getChainConfig(chainId).explorer;
 
   if (transactions.length === 0) {
     return (
@@ -52,7 +35,7 @@ export function TransactionTable({ transactions, chainId }: TransactionTableProp
           style={{
             padding: "3rem 2rem",
             textAlign: "center",
-            color: "#5a5650",
+            color: "#78716c",
             fontSize: "0.8125rem",
           }}
         >
@@ -66,7 +49,11 @@ export function TransactionTable({ transactions, chainId }: TransactionTableProp
     <div className="aa-table-section">
       <div className="aa-table-header">
         <span className="aa-table-title">Recent Transactions</span>
-        <span className="aa-table-count">{transactions.length} transactions</span>
+        <span className="aa-table-count">
+          {totalCount && totalCount > transactions.length
+            ? `${transactions.length} of ${totalCount} transactions`
+            : `${transactions.length} transactions`}
+        </span>
       </div>
       <div className="aa-table-wrap">
         <table className="aa-table" aria-label="Transaction history">
@@ -80,8 +67,8 @@ export function TransactionTable({ transactions, chainId }: TransactionTableProp
             </tr>
           </thead>
           <tbody>
-            {transactions.map((tx) => (
-              <tr key={tx.hash}>
+            {transactions.map((tx, i) => (
+              <tr key={tx.hash} className="aa-table-row-enter" style={{ animationDelay: `${i * 30}ms` }}>
                 <td>
                   <a
                     href={`${explorerBase}/tx/${tx.hash}`}
@@ -95,7 +82,7 @@ export function TransactionTable({ transactions, chainId }: TransactionTableProp
                 </td>
                 <td className="aa-mono-cell">{truncateHash(tx.from)}</td>
                 <td className="aa-mono-cell">{truncateHash(tx.to)}</td>
-                <td style={{ textAlign: "right", color: "#e8e5df", fontSize: "0.8125rem" }}>
+                <td style={{ textAlign: "right", color: "#f2f0eb", fontSize: "0.8125rem" }}>
                   {formatValue(tx.value)}
                 </td>
                 <td
@@ -103,7 +90,7 @@ export function TransactionTable({ transactions, chainId }: TransactionTableProp
                     textAlign: "right",
                     fontFamily: "'JetBrains Mono', monospace",
                     fontSize: "0.75rem",
-                    color: "#5a5650",
+                    color: "#78716c",
                   }}
                 >
                   {new Date(tx.timestamp).toLocaleTimeString()}

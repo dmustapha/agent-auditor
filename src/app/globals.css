@@ -2545,6 +2545,16 @@ body {
   font-style: italic;
 }
 
+/* ─── TABLE ROW CASCADE ─── */
+.aa-table-row-enter {
+  animation: aa-row-fade 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes aa-row-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ─── REDUCED MOTION ─── */
 @media (prefers-reduced-motion: reduce) {
   .aa-reveal {
@@ -2585,4 +2595,5 @@ body {
   .aa-protocol-chip:hover { transform: none; }
   .aa-heatmap-cell { transition: none; }
   .aa-consistency-fill { transition: none; }
+  .aa-table-row-enter { animation: none; }
 }
