@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { UITrustScore, TrustFlag, AgentType } from "@/lib/types";
+import { ActivityProfile } from "./ActivityProfile";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -652,15 +653,20 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
         <p className="aa-timestamp">Analyzed {new Date(score.timestamp).toLocaleString()}</p>
       </div>
 
-      {/* ── Behavioral Narrative ── */}
-      {score.behavioralNarrative && (
+      {/* ── Activity Profile / Behavioral Narrative ── */}
+      {(score.activityProfile || score.behavioralNarrative) && (
         <div
           ref={narrativeReveal}
           className="aa-narrative-block"
-          aria-label="Behavioral narrative"
+          aria-label="Activity profile"
         >
-          <p className="aa-narrative-kicker">Behavioral Analysis</p>
-          <blockquote className="aa-narrative-text">{score.behavioralNarrative}</blockquote>
+          <p className="aa-narrative-kicker">
+            {score.activityProfile ? "Activity Profile" : "Behavioral Analysis"}
+          </p>
+          <ActivityProfile
+            profile={score.activityProfile}
+            narrativeFallback={score.behavioralNarrative}
+          />
         </div>
       )}
 
