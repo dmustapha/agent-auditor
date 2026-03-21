@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { ChainId, TransactionSummary } from "@/lib/types";
 import { getChainConfig } from "@/lib/chains";
+import { getMethodLabel } from "../../lib/method-labels";
 
 interface TransactionTableProps {
   transactions: readonly TransactionSummary[];
@@ -96,9 +97,11 @@ export function TransactionTable({ transactions, chainId, totalCount, agentAddre
           <thead>
             <tr>
               <th scope="col">Hash</th>
+              <th scope="col">Action</th>
               <th scope="col">From</th>
               <th scope="col">To</th>
               <th scope="col" style={{ textAlign: "right" }}>Value (ETH)</th>
+              <th scope="col" style={{ width: "2rem" }}></th>
               <th scope="col" style={{ textAlign: "right" }}>Time</th>
             </tr>
           </thead>
@@ -116,10 +119,40 @@ export function TransactionTable({ transactions, chainId, totalCount, agentAddre
                     {truncateHash(tx.hash)}
                   </a>
                 </td>
+                <td>
+                  {(() => {
+                    const label = getMethodLabel(tx.methodId);
+                    if (label) {
+                      return (
+                        <span style={{ fontSize: "0.75rem" }}>
+                          <span style={{ color: "var(--color-accent)" }}>{label.verb}</span>
+                          <span style={{ color: "var(--color-text-dim)" }}> on {label.protocol}</span>
+                        </span>
+                      );
+                    }
+                    return (
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--color-text-dim)" }}>
+                        {tx.methodId ? tx.methodId.slice(0, 10) : "0x"}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td><CopyCell address={tx.from} display={truncateHash(tx.from)} /></td>
                 <td><CopyCell address={tx.to} display={truncateHash(tx.to)} /></td>
                 <td style={{ textAlign: "right", color: "#f2f0eb", fontSize: "0.8125rem" }}>
                   {formatValue(tx.value)}
+                </td>
+                <td style={{ textAlign: "center" }}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      background: tx.success ? "#22c55e" : "#ef4444",
+                    }}
+                    title={tx.success ? "Success" : "Failed"}
+                  />
                 </td>
                 <td
                   style={{
