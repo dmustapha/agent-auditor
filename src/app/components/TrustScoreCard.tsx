@@ -464,70 +464,105 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
   return (
     <div ref={cardRef} aria-label={`Trust score card for ${score.address}`}>
 
-      {/* ── Agent Header ── */}
+      {/* ── Identity Header ── */}
       <div className={`aa-agent-header aa-reveal${r}`}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-          <button
-            className="aa-copy-btn"
-            onClick={handleCopy}
-            aria-label={copied ? "Copied!" : "Copy address"}
-            title={copied ? "Copied!" : "Copy address"}
-          >
-            <span className="aa-agent-address">{truncateAddress(score.address)}</span>
-            {copied ? (
-              <svg className="aa-copy-icon aa-copy-icon--done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            ) : (
-              <svg className="aa-copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-              </svg>
-            )}
-          </button>
-          <span className="aa-badge-pill aa-badge-chain" aria-label={`Chain: ${score.chainName}`}>
-            {score.chainName}
-          </span>
-        </div>
-        <span
-          className={RECOMMENDATION_BADGE_CLASS[recommendation]}
-          aria-label={`Recommendation: ${recommendation}`}
-        >
-          {VERDICT_ICONS[recommendation]}
-          {recommendation}
-        </span>
-        {badge === "verified" && (
-          <span className="aa-trust-badge aa-trust-badge--verified">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1l3.09 6.26L22 8.27l-5 4.87 1.18 6.88L12 16.77l-6.18 3.25L7 13.14 2 8.27l6.91-1.01L12 1z"/></svg>
-            Verified Agent
-          </span>
-        )}
-        {badge === "detected" && (
-          <span className="aa-trust-badge aa-trust-badge--detected">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/></svg>
-            Detected Agent
-          </span>
-        )}
-        {badge === "unclassified" && (
-          <span className="aa-trust-badge aa-trust-badge--unclassified">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Unclassified
-          </span>
-        )}
-      </div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem", marginBottom: "0" }}>
+          {/* Left: Agent type icon */}
+          <div style={{ flexShrink: 0 }}>
+            <AgentTypeShape type={score.agentType} />
+          </div>
 
-      {/* ── Agent Classification Panel ── */}
-      <div className={`aa-classification-panel aa-reveal aa-delay-1${r}`} aria-label="Agent classification">
-        <div className="aa-classification-left">
-          <AgentTypeShape type={score.agentType} />
-          <div>
-            <p className="aa-classification-kicker">Agent Classification</p>
-            <p className="aa-classification-type" style={{ color: typeMeta.color }}>
+          {/* Center: Identity info */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Line 1: Agent type as title */}
+            <h2 style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "1.4rem",
+              color: typeMeta.color,
+              margin: 0,
+            }}>
               {typeMeta.label}
-            </p>
+            </h2>
+
+            {/* Line 2: Address + chain */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem" }}>
+              <button
+                className="aa-copy-btn"
+                onClick={handleCopy}
+                aria-label={copied ? "Copied!" : "Copy address"}
+                title={copied ? "Copied!" : "Copy address"}
+                style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+              >
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+                  {score.address.slice(0, 6)}...{score.address.slice(-4)}
+                </span>
+                {copied ? (
+                  <svg className="aa-copy-icon aa-copy-icon--done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg className="aa-copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                  </svg>
+                )}
+              </button>
+              <span className="aa-badge-pill aa-badge-chain" aria-label={`Chain: ${score.chainName}`}>
+                {score.chainName}
+              </span>
+            </div>
+
+            {/* Line 3: Protocol tags */}
+            {score.protocolsUsed && score.protocolsUsed.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.5rem" }}>
+                {score.protocolsUsed.slice(0, 5).map((protocol) => (
+                  <span key={protocol} style={{
+                    fontSize: "0.65rem",
+                    padding: "0.15rem 0.45rem",
+                    borderRadius: "9999px",
+                    background: "var(--color-surface)",
+                    color: "var(--color-text-dim)",
+                    border: "1px solid var(--color-border)",
+                  }}>
+                    {protocol}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right: Recommendation + badges */}
+          <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.4rem" }}>
+            <span
+              className={RECOMMENDATION_BADGE_CLASS[recommendation]}
+              aria-label={`Recommendation: ${recommendation}`}
+            >
+              {VERDICT_ICONS[recommendation]}
+              {recommendation}
+            </span>
+            {badge === "verified" && (
+              <span className="aa-trust-badge aa-trust-badge--verified">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1l3.09 6.26L22 8.27l-5 4.87 1.18 6.88L12 16.77l-6.18 3.25L7 13.14 2 8.27l6.91-1.01L12 1z"/></svg>
+                Verified Agent
+              </span>
+            )}
+            {badge === "detected" && (
+              <span className="aa-trust-badge aa-trust-badge--detected">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/></svg>
+                Detected Agent
+              </span>
+            )}
+            {badge === "unclassified" && (
+              <span className="aa-trust-badge aa-trust-badge--unclassified">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                Unclassified
+              </span>
+            )}
           </div>
         </div>
-        <div className="aa-classification-right">
+
+        {/* Human wallet indicator + Performance score */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem" }}>
           <HumanWalletIndicator isHuman={score.isLikelyHumanWallet} />
           <div className="aa-perf-metric">
             <span className="aa-perf-label">Performance</span>
@@ -540,7 +575,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
       </div>
 
       {/* ── Score Ring + Left Content ── */}
-      <div className={`aa-score-section aa-reveal aa-delay-2${r}`}>
+      <div className={`aa-score-section aa-reveal aa-delay-1${r}`}>
         <div>
           <p className="aa-score-eyebrow">Trust Score</p>
           <p className="aa-score-report-title">Forensic Analysis Report</p>
@@ -609,7 +644,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
       </div>
 
       {/* ── Analysis Summary ── */}
-      <div className={`aa-summary-block aa-reveal aa-delay-3${r}`} aria-label="Analysis summary">
+      <div className={`aa-summary-block aa-reveal aa-delay-2${r}`} aria-label="Analysis summary">
         <p className="aa-summary-label">Analysis Summary</p>
         <p className="aa-summary-text">{score.summary}</p>
         <p className="aa-timestamp">Analyzed {new Date(score.timestamp).toLocaleString()}</p>
@@ -628,7 +663,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
       )}
 
       {/* ── Score Breakdown ── */}
-      <div className={`aa-breakdown-card aa-reveal aa-delay-4${r}`} aria-label="Score breakdown">
+      <div className={`aa-breakdown-card aa-reveal aa-delay-3${r}`} aria-label="Score breakdown">
         <p className="aa-section-heading">Score Breakdown</p>
         <div className="aa-breakdown-grid" role="list">
           {score.breakdown.map((axis, i) => (
@@ -740,7 +775,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
 
       {/* ── Risk Flags ── */}
       {score.flags.length > 0 && (
-        <div className={`aa-flags-section aa-reveal aa-delay-5${r}`} aria-label="Risk flags">
+        <div className={`aa-flags-section aa-reveal aa-delay-4${r}`} aria-label="Risk flags">
           <p className="aa-flags-label">Risk Signals — {score.flags.length} detected</p>
           <div className="aa-flags-list" role="list">
             {score.flags.map((flag, i) => (
