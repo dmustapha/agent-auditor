@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { ChainId, AgentTransactionData, TrustScore, TrustFlag } from "./types";
+import type { ChainId, AgentTransactionData, AgentType, TrustScore, TrustFlag } from "./types";
+import { sanitizeForPrompt } from "./sanitize";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -17,13 +18,19 @@ interface VeniceParameters {
   include_venice_system_prompt?: boolean;
 }
 
-// ─── Client Factory ──────────────────────────────────────────────────────────
+// ─── Client Factory (singleton) ─────────────────────────────────────────────
+
+let _veniceClient: OpenAI | null = null;
+let _veniceApiKey: string | null = null;
+let _resolvedModel: string | null = null;
 
 export function createVeniceClient(apiKey: string): OpenAI {
-  return new OpenAI({
-    apiKey,
-    baseURL: VENICE_BASE_URL,
-  });
+  if (!_veniceClient || _veniceApiKey !== apiKey) {
+    _veniceClient = new OpenAI({ apiKey, baseURL: VENICE_BASE_URL });
+    _veniceApiKey = apiKey;
+    _resolvedModel = null;
+  }
+  return _veniceClient;
 }
 
 // ─── Runtime Model Verification ──────────────────────────────────────────────
@@ -38,18 +45,20 @@ export async function listAvailableModels(client: OpenAI): Promise<string[]> {
  * Falls back through: PRIMARY_MODEL → FALLBACK_MODEL → first llama → first mistral → any model.
  */
 export async function resolveModel(client: OpenAI): Promise<string> {
+  if (_resolvedModel) return _resolvedModel;
+
   const available = await listAvailableModels(client);
 
-  if (available.includes(PRIMARY_MODEL)) return PRIMARY_MODEL;
-  if (available.includes(FALLBACK_MODEL)) return FALLBACK_MODEL;
+  if (available.includes(PRIMARY_MODEL)) { _resolvedModel = PRIMARY_MODEL; return _resolvedModel; }
+  if (available.includes(FALLBACK_MODEL)) { _resolvedModel = FALLBACK_MODEL; return _resolvedModel; }
 
   const llama = available.find((m) => m.includes("llama"));
-  if (llama) return llama;
+  if (llama) { _resolvedModel = llama; return _resolvedModel; }
 
   const mistral = available.find((m) => m.includes("mistral"));
-  if (mistral) return mistral;
+  if (mistral) { _resolvedModel = mistral; return _resolvedModel; }
 
-  if (available.length > 0) return available[0];
+  if (available.length > 0) { _resolvedModel = available[0]; return _resolvedModel; }
 
   throw new Error("No models available on Venice");
 }
@@ -58,7 +67,7 @@ export async function resolveModel(client: OpenAI): Promise<string> {
 
 const SYSTEM_PROMPT = `You are AgentAuditor, an AI security analyst specializing in onchain autonomous agent behavior across EVM chains.
 
-Your task: analyze transaction data for an AI agent address and produce a structured trust score.
+Your task: analyze transaction data for an AI agent address and produce a structured trust score with deep behavioral analysis.
 
 ANALYSIS FRAMEWORK:
 1. Transaction Patterns (0-25 points)
@@ -85,6 +94,9 @@ ANALYSIS FRAMEWORK:
    - Anomalous deviations from baseline
    - Permission escalation patterns
 
+AGENT TYPE CLASSIFICATION:
+Classify the agent as one of: KEEPER, ORACLE, LIQUIDATOR, MEV_BOT, BRIDGE_RELAYER, DEX_TRADER, GOVERNANCE, YIELD_OPTIMIZER, UNKNOWN
+
 FLAGS:
 - CRITICAL: Direct interaction with known exploit contracts, mixer usage, drain patterns
 - HIGH: Unverified contract deployment, large unexplained transfers, nonce manipulation
@@ -96,67 +108,173 @@ RECOMMENDATION:
 - CAUTION: Score 40-69 OR any HIGH flags
 - BLOCKLIST: Score < 40 OR any CRITICAL flags
 
-Respond ONLY with valid JSON matching the provided schema. No markdown, no explanation outside JSON.`;
+PERFORMANCE SCORE (0-100):
+- 90-100: Exceptional uptime, zero failures, consistent gas efficiency
+- 70-89: Reliable operation with minor gaps
+- 40-69: Notable issues — failures, inefficiency, long gaps
+- 0-39: Severely degraded — frequent failures, abandoned, or erratic
 
-// ─── JSON Schema for Structured Output ───────────────────────────────────────
+CONSISTENCY SCORE (0.0-1.0):
+- 0.9-1.0: Extremely regular intervals, predictable behavior
+- 0.6-0.89: Mostly consistent with occasional variance
+- 0.3-0.59: Irregular but not random
+- 0.0-0.29: Highly erratic or one-off activity
 
-const TRUST_SCORE_SCHEMA = {
-  type: "json_schema" as const,
-  json_schema: {
-    name: "trust_score",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        agentAddress: { type: "string" },
-        overallScore: { type: "number" },
-        breakdown: {
-          type: "object",
-          properties: {
-            transactionPatterns: { type: "number" },
-            contractInteractions: { type: "number" },
-            fundFlow: { type: "number" },
-            behavioralConsistency: { type: "number" },
-          },
-          required: [
-            "transactionPatterns",
-            "contractInteractions",
-            "fundFlow",
-            "behavioralConsistency",
-          ],
-          additionalProperties: false,
-        },
-        flags: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              severity: { type: "string", enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
-              category: { type: "string" },
-              description: { type: "string" },
-              evidence: { type: "string" },
-            },
-            required: ["severity", "category", "description", "evidence"],
-            additionalProperties: false,
-          },
-        },
-        summary: { type: "string" },
-        recommendation: { type: "string", enum: ["SAFE", "CAUTION", "BLOCKLIST"] },
-        analysisTimestamp: { type: "string" },
-      },
-      required: [
-        "agentAddress",
-        "overallScore",
-        "breakdown",
-        "flags",
-        "summary",
-        "recommendation",
-        "analysisTimestamp",
-      ],
-      additionalProperties: false,
-    },
+HUMAN WALLET DETECTION:
+You will receive a pre-computed humanScore (0-100) with signals. Use these as GROUND TRUTH.
+- If humanScore > 70 and is_contract=false: set isLikelyHumanWallet=true
+- If humanScore < 30 or is_contract=true: set isLikelyHumanWallet=false
+- If 30-70: use your analysis to decide, explain reasoning in behavioralNarrative
+
+GROUND TRUTH VALUES:
+Some values are pre-computed deterministically and provided in the prompt. DO NOT fabricate these:
+- successRate: provided — use as-is
+- netFlowETH: provided — use as-is
+- protocolsUsed: provided — use as-is, you may add protocols you detect from context
+- totalGasSpentETH: provided — use as-is
+
+You MUST respond ONLY with a JSON object in EXACTLY this structure (no markdown, no explanation, no extra fields):
+
+{
+  "agentAddress": "0x...",
+  "overallScore": 75,
+  "breakdown": {
+    "transactionPatterns": 20,
+    "contractInteractions": 18,
+    "fundFlow": 22,
+    "behavioralConsistency": 15
   },
-};
+  "flags": [{"severity": "MEDIUM", "category": "gas_usage", "description": "...", "evidence": "..."}],
+  "summary": "Agent shows normal behavior with minor anomalies.",
+  "recommendation": "SAFE",
+  "analysisTimestamp": "2026-03-20T12:00:00Z",
+  "agentType": "KEEPER",
+  "behavioralNarrative": "This agent operates as a Chainlink Keeper, executing upkeep tasks every ~4 hours with high consistency.",
+  "performanceScore": 85,
+  "operationalPattern": {
+    "avgIntervalHours": 4.2,
+    "peakHoursUTC": [8, 14, 20],
+    "consistencyScore": 0.92
+  },
+  "financialSummary": {
+    "totalGasSpentETH": "0.42",
+    "netFlowETH": "-0.42",
+    "largestSingleTxETH": "0.003"
+  },
+  "protocolsUsed": ["Chainlink Automation", "Uniswap V3"],
+  "funFact": "This agent has executed 1,247 upkeeps without a single failure.",
+  "anomalies": ["Unusual 12-hour gap on March 15"],
+  "isLikelyHumanWallet": false
+}
+
+The four breakdown values MUST sum to overallScore (±1 rounding). Each breakdown value is 0-25. overallScore is 0-100.`;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function stripMarkdownFences(raw: string): string {
+  return raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+}
+
+function normalizeVeniceResponse(
+  raw: Record<string, unknown>,
+  address: string,
+  chainId: ChainId,
+): TrustScore {
+  // Handle alternate field names Venice models sometimes use
+  const score = (raw.overallScore ?? raw.trustScore ?? raw.score ?? 50) as number;
+
+  const breakdown = (raw.breakdown as Record<string, number> | undefined) ?? {
+    transactionPatterns: Math.round(score * 0.25),
+    contractInteractions: Math.round(score * 0.28),
+    fundFlow: Math.round(score * 0.22),
+    behavioralConsistency: 0,
+  };
+  // Ensure behavioralConsistency fills any gap so breakdown sums to score
+  const partial = (breakdown.transactionPatterns ?? 0) +
+    (breakdown.contractInteractions ?? 0) +
+    (breakdown.fundFlow ?? 0);
+  breakdown.behavioralConsistency = Math.max(0, Math.min(25, score - partial));
+
+  // Normalize flags — may be string[] or object[]
+  const VALID_SEVERITIES = new Set(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+  const rawFlags = (raw.flags ?? []) as unknown[];
+  const flags: TrustFlag[] = rawFlags.map((f) => {
+    if (typeof f === "string") {
+      const upper = f.toUpperCase();
+      return {
+        severity: (VALID_SEVERITIES.has(upper) ? upper : "LOW") as TrustFlag["severity"],
+        category: "general",
+        description: f,
+        evidence: "",
+      };
+    }
+    const flag = f as Record<string, unknown>;
+    const sev = String(flag.severity ?? "LOW").toUpperCase();
+    return {
+      severity: (VALID_SEVERITIES.has(sev) ? sev : "LOW") as TrustFlag["severity"],
+      category: String(flag.category ?? "general"),
+      description: String(flag.description ?? ""),
+      evidence: String(flag.evidence ?? ""),
+    };
+  });
+
+  const recommendation = (raw.recommendation as string | undefined) ??
+    (score >= 70 ? "SAFE" : score >= 40 ? "CAUTION" : "BLOCKLIST");
+
+  const opPattern = raw.operationalPattern as Record<string, unknown> | undefined;
+  const finSummary = raw.financialSummary as Record<string, string> | undefined;
+
+  return {
+    agentAddress: (raw.agentAddress as string | undefined) ?? address,
+    chainId,
+    overallScore: score,
+    breakdown: {
+      transactionPatterns: breakdown.transactionPatterns ?? 0,
+      contractInteractions: breakdown.contractInteractions ?? 0,
+      fundFlow: breakdown.fundFlow ?? 0,
+      behavioralConsistency: breakdown.behavioralConsistency,
+    },
+    flags,
+    summary: (raw.summary as string | undefined) ?? `Score: ${score}/100`,
+    recommendation: recommendation as "SAFE" | "CAUTION" | "BLOCKLIST",
+    analysisTimestamp: (raw.analysisTimestamp as string | undefined) ?? new Date().toISOString(),
+    agentType: (raw.agentType as AgentType | undefined) ?? "UNKNOWN",
+    behavioralNarrative: (raw.behavioralNarrative as string | undefined) ?? "Behavioral analysis not available.",
+    performanceScore: typeof raw.performanceScore === "number" ? raw.performanceScore : score,
+    operationalPattern: {
+      avgIntervalHours: (opPattern?.avgIntervalHours as number | undefined) ?? 0,
+      peakHoursUTC: (opPattern?.peakHoursUTC as number[] | undefined) ?? [],
+      consistencyScore: (opPattern?.consistencyScore as number | undefined) ?? 0,
+    },
+    financialSummary: {
+      totalGasSpentETH: finSummary?.totalGasSpentETH ?? "0",
+      netFlowETH: finSummary?.netFlowETH ?? "0",
+      largestSingleTxETH: finSummary?.largestSingleTxETH ?? "0",
+    },
+    protocolsUsed: (raw.protocolsUsed as string[] | undefined) ?? [],
+    funFact: (raw.funFact as string | undefined) ?? "",
+    anomalies: (raw.anomalies as string[] | undefined) ?? [],
+    isLikelyHumanWallet: typeof raw.isLikelyHumanWallet === "boolean" ? raw.isLikelyHumanWallet : false,
+  };
+}
+
+// ─── Sanitization ───────────────────────────────────────────────────────────
+
+function sanitizeAgentDataForPrompt(data: AgentTransactionData): AgentTransactionData {
+  return {
+    ...data,
+    transactions: data.transactions.map(tx => ({
+      ...tx,
+      methodId: sanitizeForPrompt(tx.methodId, 20),
+      from: sanitizeForPrompt(tx.from, 42),
+      to: sanitizeForPrompt(tx.to, 42),
+    })),
+    tokenTransfers: data.tokenTransfers.map(t => ({
+      ...t,
+      token: sanitizeForPrompt(t.token, 50),
+    })),
+  };
+}
 
 // ─── Analysis Function ───────────────────────────────────────────────────────
 
@@ -166,73 +284,98 @@ export async function analyzeAgent(
   model?: string,
 ): Promise<TrustScore> {
   const modelId = model ?? PRIMARY_MODEL;
+  const sanitizedData = sanitizeAgentDataForPrompt(data);
 
-  const userMessage = `Analyze this ${data.chainId.toUpperCase()} chain agent:
+  const metrics = sanitizedData.computedMetrics;
+  const metricsSection = metrics ? `
+=== COMPUTED METRICS ===
+Avg gas per tx: ${metrics.avgGasPerTx.toFixed(0)} | Total gas spent: ${(Number(metrics.totalGasSpentWei) / 1e18).toFixed(6)} ETH | Tx frequency: ${metrics.txFrequencyPerDay.toFixed(2)} tx/day
+Active hours UTC: [${metrics.activeHoursUTC.join(",")}]
+Success rate: ${(metrics.successRate * 100).toFixed(1)}% | Unique counterparties: ${metrics.uniqueCounterparties}
+Largest single tx: ${(Number(BigInt(metrics.largestSingleTxWei)) / 1e18).toFixed(6)} ETH | Nonce gaps: ${metrics.nonceGaps}
+First seen: ${metrics.firstSeenTimestamp ? new Date(metrics.firstSeenTimestamp).toISOString() : "N/A"} | Last seen: ${metrics.lastSeenTimestamp ? new Date(metrics.lastSeenTimestamp).toISOString() : "N/A"}
+Pre-classified agent type: ${metrics.agentType} | ERC-4337: ${metrics.isERC4337}
+Most called contracts: ${metrics.mostCalledContracts.slice(0, 5).join(", ") || "N/A"}
+` : "";
 
-Address: ${data.address}
-Chain: ${data.chainId}
-Transaction count: ${data.transactions.length}
-Token transfer count: ${data.tokenTransfers.length}
-Unique contracts called: ${new Set(data.contractCalls.map((c) => c.contract)).size}
+  const contractSection = sanitizedData.smartContractData ? `
+=== CONTRACT DATA ===
+Verified: ${sanitizedData.smartContractData.isVerified} | Name: ${sanitizedData.smartContractData.name ?? "N/A"}
+` : "";
 
-Recent transactions (last 20):
-${JSON.stringify(data.transactions.slice(-20), null, 2)}
+  const balanceSection = sanitizedData.coinBalanceHistory?.length ? `
+=== BALANCE TREND (last 10 points) ===
+${JSON.stringify(sanitizedData.coinBalanceHistory.slice(-10), null, 2)}
+` : "";
+
+  const eventsSection = sanitizedData.eventLogs?.length ? `
+=== RECENT EVENTS (last 10) ===
+${JSON.stringify(sanitizedData.eventLogs.slice(-10), null, 2)}
+` : "";
+
+  const userMessage = `Analyze this ${sanitizedData.chainId.toUpperCase()} chain agent:
+
+Address: ${sanitizedData.address}
+Chain: ${sanitizedData.chainId}
+Transaction count: ${sanitizedData.transactions.length}
+Token transfer count: ${sanitizedData.tokenTransfers.length}
+Unique contracts called: ${new Set(sanitizedData.contractCalls.map((c) => c.contract)).size}
+${metricsSection}${contractSection}
+=== RECENT TRANSACTIONS (last 20) ===
+${JSON.stringify(sanitizedData.transactions.slice(-20), null, 2)}
 
 Token transfers (last 20):
-${JSON.stringify(data.tokenTransfers.slice(-20), null, 2)}
+${JSON.stringify(sanitizedData.tokenTransfers.slice(-20), null, 2)}
 
 Contract interactions (last 20):
-${JSON.stringify(data.contractCalls.slice(-20), null, 2)}`;
+${JSON.stringify(sanitizedData.contractCalls.slice(-20), null, 2)}
+${balanceSection}${eventsSection}`;
 
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userMessage },
   ];
 
-  let parsed: Record<string, unknown>;
+  // Venice doesn't support json_schema response_format — rely on system prompt + JSON parsing
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90_000);
 
+  let response;
   try {
-    // Primary: structured output with json_schema
-    const response = await client.chat.completions.create({
-      model: modelId,
-      messages,
-      response_format: TRUST_SCORE_SCHEMA,
-      temperature: 0.1,
-      max_tokens: 2000,
-      // @ts-expect-error venice_parameters not in OpenAI types
-      venice_parameters: {
-        enable_e2ee: true,
-        include_venice_system_prompt: false,
-      } satisfies VeniceParameters,
-    });
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) throw new Error("Empty response from Venice");
-    parsed = JSON.parse(content);
-  } catch (primaryErr) {
-    // Fallback: Venice may reject json_schema mode for some models, or return non-JSON.
-    // Retry WITHOUT response_format, relying on system prompt "respond ONLY with valid JSON".
-    console.warn("Venice structured output failed, retrying without schema:", primaryErr);
-    const fallback = await client.chat.completions.create({
-      model: modelId,
-      messages,
-      temperature: 0.1,
-      max_tokens: 2000,
-      // @ts-expect-error venice_parameters not in OpenAI types
-      venice_parameters: {
-        enable_e2ee: true,
-        include_venice_system_prompt: false,
-      } satisfies VeniceParameters,
-    });
-    const raw = fallback.choices[0]?.message?.content;
-    if (!raw) throw new Error("Empty fallback response from Venice");
-    parsed = JSON.parse(raw); // If this also fails, let it throw
+    response = await client.chat.completions.create(
+      {
+        model: modelId,
+        messages,
+        temperature: 0.1,
+        max_tokens: 2000,
+        // @ts-expect-error venice_parameters not in OpenAI types
+        venice_parameters: {
+          enable_e2ee: true,
+          include_venice_system_prompt: false,
+        } satisfies VeniceParameters,
+      },
+      { signal: controller.signal },
+    );
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Venice AI timed out after 90 seconds. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
 
-  return {
-    ...parsed,
-    chainId: data.chainId,
-  } as TrustScore;
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("Empty response from Venice");
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(stripMarkdownFences(content));
+  } catch {
+    throw new Error("Venice returned invalid JSON. Please try again.");
+  }
+  const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId);
+
+  return normalized;
 }
 
 // ─── Mock Mode (for development — saves Venice prompts) ──────────────────────
@@ -285,5 +428,22 @@ export function createMockTrustScore(
     summary: `Mock analysis: ${recommendation} with score ${baseScore}/100. ${txCount} transactions analyzed on ${chainId}.`,
     recommendation,
     analysisTimestamp: new Date().toISOString(),
+    agentType: "KEEPER" as AgentType,
+    behavioralNarrative: `Mock agent on ${chainId} with ${txCount} transactions. Exhibits automated keeper-like behavior patterns.`,
+    performanceScore: baseScore,
+    operationalPattern: {
+      avgIntervalHours: 4.2,
+      peakHoursUTC: [8, 14, 20],
+      consistencyScore: 0.85,
+    },
+    financialSummary: {
+      totalGasSpentETH: "0.042",
+      netFlowETH: "-0.042",
+      largestSingleTxETH: "0.003",
+    },
+    protocolsUsed: ["Chainlink Automation"],
+    funFact: `This mock agent has been analyzed ${txCount} transactions deep.`,
+    anomalies: [],
+    isLikelyHumanWallet: false,
   };
 }
