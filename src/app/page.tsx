@@ -370,6 +370,7 @@ function Home() {
                   transactions={result.transactions}
                   chainId={result.trustScore.chainId}
                   totalCount={result.totalTransactionCount}
+                  agentAddress={result.trustScore.address}
                 />
               </div>
             </div>

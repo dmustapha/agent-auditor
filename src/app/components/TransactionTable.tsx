@@ -8,6 +8,7 @@ interface TransactionTableProps {
   transactions: readonly TransactionSummary[];
   chainId: ChainId;
   totalCount?: number;
+  agentAddress?: string;
 }
 
 function truncateHash(hash: string): string {
@@ -15,11 +16,15 @@ function truncateHash(hash: string): string {
 }
 
 function formatValue(wei: string): string {
-  const eth = Number(BigInt(wei)) / 1e18;
-  if (eth === 0) return "0";
-  if (eth >= 0.001) return eth.toFixed(4);
-  if (eth >= 0.000001) return eth.toExponential(3);
-  return eth.toExponential(2);
+  try {
+    const eth = Number(BigInt(wei)) / 1e18;
+    if (eth === 0) return "0";
+    if (eth >= 0.001) return eth.toFixed(4);
+    if (eth >= 0.000001) return eth.toExponential(3);
+    return eth.toExponential(2);
+  } catch {
+    return "0";
+  }
 }
 
 function CopyCell({ address, display }: { address: string; display: string }) {
@@ -52,7 +57,7 @@ function CopyCell({ address, display }: { address: string; display: string }) {
   );
 }
 
-export function TransactionTable({ transactions, chainId, totalCount }: TransactionTableProps) {
+export function TransactionTable({ transactions, chainId, totalCount, agentAddress }: TransactionTableProps) {
   const explorerBase = getChainConfig(chainId).explorer;
 
   if (transactions.length === 0) {
@@ -137,7 +142,7 @@ export function TransactionTable({ transactions, chainId, totalCount }: Transact
             Showing {transactions.length} of {totalCount.toLocaleString()} transactions.
             Full history available on{" "}
             <a
-              href={`${explorerBase}/address/${transactions[0]?.from || ""}`}
+              href={`${explorerBase}/address/${agentAddress || transactions[0]?.from || ""}`}
               target="_blank"
               rel="noopener noreferrer"
               className="aa-table-explorer-link"
