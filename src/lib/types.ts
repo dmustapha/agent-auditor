@@ -44,6 +44,8 @@ export interface BlockscoutTransaction {
   readonly timestamp: string;
   readonly method: string | null;
   readonly decoded_input: { readonly method_id: string } | null;
+  readonly result?: string;
+  readonly status?: string;
 }
 
 export interface BlockscoutTokenTransfer {
@@ -98,6 +100,7 @@ export interface TransactionSummary {
   readonly nonce?: number;
   readonly timestamp: number;
   readonly methodId: string;
+  readonly success: boolean;
 }
 
 export interface TokenTransfer {

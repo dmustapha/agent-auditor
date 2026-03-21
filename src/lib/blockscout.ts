@@ -67,6 +67,7 @@ export async function getTransactions(
       nonce: tx.nonce,
       timestamp: new Date(tx.timestamp).getTime(),
       methodId: tx.decoded_input?.method_id ?? tx.method ?? "0x",
+      success: tx.result === "success" || tx.status === "ok",
     }));
     all.push(...mapped);
 
