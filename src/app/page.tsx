@@ -164,7 +164,7 @@ function Home() {
       const data: AnalyzeResponse = await res.json();
       setWalletClassification(data.walletClassification ?? null);
       setHasAgentIdentity(data.agentIdentity != null);
-      const uiScore = formatForUI(data.trustScore, data.successRate);
+      const uiScore = formatForUI(data.trustScore, data.successRate, data.ethPrice);
 
       // Complete steps 4+5 after successful fetch
       setLoadingSteps((prev) => prev.map((s, i) =>

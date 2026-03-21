@@ -347,6 +347,7 @@ export interface AnalyzeResponse {
   readonly totalTransactionCount?: number;
   readonly walletClassification?: WalletClassification;
   readonly successRate?: number;
+  readonly ethPrice?: number;
 }
 
 export interface AnalyzeErrorResponse {
@@ -393,6 +394,7 @@ export interface UITrustScore {
   readonly walletClassification?: WalletClassification;
   readonly activityProfile?: ActivityProfile;
   readonly successRate?: number;
+  readonly ethPrice?: number;
 }
 
 // ─── Sidebar / localStorage Types ───────────────────────────────────────────

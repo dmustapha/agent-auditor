@@ -102,7 +102,7 @@ ${flagLines ? `*Flags:*\n${flagLines}\n` : ""}*Summary:* ${score.summary}`;
 
 // ─── Format for UI ───────────────────────────────────────────────────────────
 
-export function formatForUI(score: TrustScore, successRate?: number): UITrustScore {
+export function formatForUI(score: TrustScore, successRate?: number, ethPrice?: number): UITrustScore {
   const chainConfig = getChainConfig(score.chainId);
 
   const recommendationColors: Record<string, string> = {
@@ -140,5 +140,6 @@ export function formatForUI(score: TrustScore, successRate?: number): UITrustSco
     walletClassification: score.walletClassification,
     activityProfile: score.activityProfile,
     successRate,
+    ethPrice,
   };
 }

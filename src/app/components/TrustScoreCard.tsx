@@ -745,6 +745,11 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
             <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.15rem" }}>
               {gasLabel(parseFloat(score.financialSummary.totalGasSpentETH || "0"))}
             </span>
+            {score.ethPrice != null && (
+              <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block" }}>
+                ~${(parseFloat(score.financialSummary.totalGasSpentETH || "0") * score.ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+            )}
           </div>
           <div className="aa-fin-item">
             <span className="aa-fin-label">Net Flow</span>
@@ -760,6 +765,11 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
                 </span>
               );
             })()}
+            {score.ethPrice != null && (
+              <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block" }}>
+                ~${(Math.abs(parseFloat(score.financialSummary.netFlowETH || "0")) * score.ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+            )}
           </div>
           <div className="aa-fin-item">
             <span className="aa-fin-label">Largest Tx</span>
@@ -770,6 +780,11 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
             <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.15rem" }}>
               {txSizeLabel(parseFloat(score.financialSummary.largestSingleTxETH || "0"))}
             </span>
+            {score.ethPrice != null && (
+              <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block" }}>
+                ~${(parseFloat(score.financialSummary.largestSingleTxETH || "0") * score.ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+            )}
           </div>
         </div>
       </div>

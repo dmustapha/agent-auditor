@@ -6,6 +6,7 @@ import { getAgentIdentity } from "@/lib/erc8004";
 import { createVeniceClient, analyzeAgent, resolveModel, createMockTrustScore } from "@/lib/venice";
 import { validateTrustScore } from "@/lib/trust-score";
 import { analysisCache } from "@/lib/cache";
+import { getETHPrice } from "@/lib/price";
 
 const USE_MOCK = process.env.VENICE_MOCK === "true";
 
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Fetch onchain data from resolved chain
     const agentData = await fetchAgentData(resolved.chainId, resolved.address);
+    const ethPrice = await getETHPrice();
 
     // 4. Try to get agent identity (may not be registered on ERC-8004)
     let agentIdentity = null;
@@ -99,6 +101,7 @@ export async function POST(request: NextRequest) {
       totalTransactionCount: agentData.transactions.length,
       walletClassification: agentData.computedMetrics?.walletClassification,
       successRate: agentData.computedMetrics?.successRate,
+      ethPrice: ethPrice ?? undefined,
     };
 
     analysisCache.set(cacheKey, response);
