@@ -2765,6 +2765,11 @@ body {
   color: #eab308;
 }
 
+.aa-gate-confidence--low {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-muted);
+}
+
 .aa-gate-actions {
   display: flex;
   flex-direction: column;

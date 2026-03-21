@@ -25,6 +25,16 @@ import type {
   WalletClassification,
 } from "@/lib/types";
 
+function deriveBadge(
+  wc: WalletClassification | null,
+  hasIdentity: boolean,
+): "verified" | "detected" | "unclassified" | null {
+  if (hasIdentity) return "verified";
+  if (wc && wc.humanScore < 30) return "detected";
+  if (wc && wc.humanScore >= 30 && wc.humanScore <= 70) return "unclassified";
+  return null;
+}
+
 const VALID_CHAINS = new Set(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "all"]);
 
 const EXAMPLE_AGENTS = [
@@ -96,6 +106,8 @@ function Home() {
     setError(null);
     setResult(null);
     setForceAnalysis(false);
+    setWalletClassification(null);
+    setHasAgentIdentity(false);
 
     // Clear any prior timers
     stepTimersRef.current.forEach(clearTimeout);
@@ -139,6 +151,7 @@ function Home() {
         i === 0 ? { ...s, label: `Detected: ${uiScore.chainId}`, status: "complete" as const } : s
       ));
 
+      // Result is set even when gate fires; forceAnalysis=true later reveals it without a re-fetch
       setResult({
         trustScore: uiScore,
         transactions: [...data.transactions],
@@ -215,16 +228,6 @@ function Home() {
     walletClassification.humanScore > 70 &&
     walletClassification.confidence !== "LOW" &&
     !forceAnalysis;
-
-  function deriveBadge(
-    wc: WalletClassification | null,
-    hasIdentity: boolean,
-  ): "verified" | "detected" | "unclassified" | null {
-    if (hasIdentity) return "verified";
-    if (wc && wc.humanScore < 30) return "detected";
-    if (wc && wc.humanScore >= 30 && wc.humanScore <= 70) return "unclassified";
-    return null;
-  }
 
   const showHero = !result && !loading && !error;
   const hasContent = loading || error || result;
@@ -394,6 +397,7 @@ function Home() {
                 setForceAnalysis(false);
                 setResult(null);
                 setWalletClassification(null);
+                setHasAgentIdentity(false);
                 window.scrollTo({ top: 0, behavior: "smooth" });
                 setTimeout(() => inputRef.current?.focus(), 100);
               }}
