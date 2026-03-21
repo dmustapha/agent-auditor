@@ -144,12 +144,14 @@ export function TransactionTable({ transactions, chainId, totalCount, agentAddre
                 </td>
                 <td style={{ textAlign: "center" }}>
                   <span
+                    role="img"
+                    aria-label={tx.success ? "Success" : "Failed"}
                     style={{
                       display: "inline-block",
                       width: "6px",
                       height: "6px",
                       borderRadius: "50%",
-                      background: tx.success ? "#22c55e" : "#ef4444",
+                      background: tx.success ? "var(--color-safe)" : "var(--color-blocklist)",
                     }}
                     title={tx.success ? "Success" : "Failed"}
                   />

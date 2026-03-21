@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
       totalTransactionCount: agentData.transactions.length,
       walletClassification: agentData.computedMetrics?.walletClassification,
       successRate: agentData.computedMetrics?.successRate,
-      ethPrice: ethPrice ?? undefined,
+      ethPrice: ethPrice ?? undefined, // null → undefined for optional field
     };
 
     analysisCache.set(cacheKey, response);

@@ -32,8 +32,8 @@ export function ActivityProfile({ profile, narrativeFallback }: ActivityProfileP
       {/* Strategy Tags */}
       {profile.strategies.length > 0 && (
         <div className="aa-strategy-tags">
-          {profile.strategies.map((s, i) => (
-            <span key={i} className="aa-strategy-tag">{s}</span>
+          {profile.strategies.map((s) => (
+            <span key={s} className="aa-strategy-tag">{s}</span>
           ))}
         </div>
       )}
@@ -41,8 +41,8 @@ export function ActivityProfile({ profile, narrativeFallback }: ActivityProfileP
       {/* Protocol Breakdown */}
       {profile.protocolBreakdown.length > 0 && (
         <div className="aa-protocol-bar">
-          {profile.protocolBreakdown.map((entry, i) => (
-            <div key={i} className="aa-protocol-entry">
+          {profile.protocolBreakdown.map((entry) => (
+            <div key={entry.protocol} className="aa-protocol-entry">
               <span className="aa-protocol-name">{entry.protocol}</span>
               <div className="aa-protocol-pct-bar">
                 <div
@@ -67,8 +67,8 @@ export function ActivityProfile({ profile, narrativeFallback }: ActivityProfileP
       {/* Risk Behaviors */}
       {profile.riskBehaviors.length > 0 && (
         <div className="aa-strategy-tags">
-          {profile.riskBehaviors.map((r, i) => (
-            <span key={i} className="aa-risk-tag">{r}</span>
+          {profile.riskBehaviors.map((r) => (
+            <span key={r} className="aa-risk-tag">{r}</span>
           ))}
         </div>
       )}
