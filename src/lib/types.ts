@@ -24,6 +24,14 @@ export interface AddressInfo {
   readonly transactionsCount: number;
 }
 
+export interface WalletClassification {
+  readonly isDefinitelyContract: boolean;
+  readonly isERC4337: boolean;
+  readonly humanScore: number; // 0 (definitely agent) to 100 (definitely human)
+  readonly signals: readonly string[];
+  readonly tier1Decisive: boolean; // true if Tier 1 alone was enough
+}
+
 // ─── Agent Classification ───────────────────────────────────────────────────
 
 export type AgentType =
@@ -135,6 +143,7 @@ export interface AgentMetrics {
   readonly isERC4337: boolean;
   readonly netFlowETH: string;
   readonly protocolsUsed: readonly string[];
+  readonly walletClassification: WalletClassification;
 }
 
 // ─── Blockscout Enrichment Types ────────────────────────────────────────────

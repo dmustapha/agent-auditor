@@ -1,7 +1,7 @@
 import type { AgentMetrics, AgentTransactionData } from "./types";
-import { classifyAgentType, detectERC4337, inferProtocols } from "./agent-classifier";
+import { classifyAgentType, detectERC4337, inferProtocols, computeWalletClassification } from "./agent-classifier";
 
-export function computeMetrics(data: Pick<AgentTransactionData, "address" | "chainId" | "transactions" | "tokenTransfers" | "contractCalls" | "coinBalanceHistory">): AgentMetrics {
+export function computeMetrics(data: Pick<AgentTransactionData, "address" | "chainId" | "transactions" | "tokenTransfers" | "contractCalls" | "coinBalanceHistory" | "addressInfo">): AgentMetrics {
   const { address, transactions } = data;
 
   // Gas metrics
@@ -104,5 +104,6 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
     isERC4337: detectERC4337(transactions),
     netFlowETH,
     protocolsUsed: inferProtocols(transactions),
+    walletClassification: computeWalletClassification(transactions, data.addressInfo),
   };
 }

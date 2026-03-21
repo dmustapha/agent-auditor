@@ -1,4 +1,4 @@
-import type { AgentType, TransactionSummary } from "./types";
+import type { AgentType, TransactionSummary, AddressInfo, WalletClassification } from "./types";
 
 const ENTRY_POINT_V06 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789".toLowerCase();
 const ENTRY_POINT_V07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032".toLowerCase();
@@ -74,4 +74,135 @@ export function inferProtocols(txs: readonly TransactionSummary[]): string[] {
     if (match) protocols.add(match.protocol);
   }
   return Array.from(protocols);
+}
+
+export function computeWalletClassification(
+  txs: readonly TransactionSummary[],
+  addressInfo?: AddressInfo,
+): WalletClassification {
+  const signals: string[] = [];
+  const isERC4337 = detectERC4337(txs);
+
+  // ── Tier 1: Definitive signals ──
+  if (addressInfo?.isContract) {
+    signals.push("Address is a smart contract (Blockscout is_contract=true)");
+    return {
+      isDefinitelyContract: true,
+      isERC4337,
+      humanScore: isERC4337 ? 30 : 0,
+      signals,
+      tier1Decisive: true,
+    };
+  }
+
+  if (isERC4337) {
+    signals.push("ERC-4337 account abstraction detected");
+  }
+
+  // ── Tier 2: Behavioral heuristics (EOA only) ──
+  let humanScore = 50;
+
+  if (txs.length < 3) {
+    signals.push("Too few transactions for behavioral analysis");
+    return { isDefinitelyContract: false, isERC4337, humanScore: 50, signals, tier1Decisive: false };
+  }
+
+  humanScore = applyMethodConcentration(txs, humanScore, signals);
+  humanScore = applyIntervalVariance(txs, humanScore, signals);
+  humanScore = applyHourEntropy(txs, humanScore, signals);
+  humanScore = applyZeroValueRate(txs, humanScore, signals);
+
+  if (addressInfo?.ensName) {
+    humanScore += 15;
+    signals.push(`ENS name: ${addressInfo.ensName}`);
+  }
+
+  humanScore = Math.max(0, Math.min(100, humanScore));
+
+  return { isDefinitelyContract: false, isERC4337, humanScore, signals, tier1Decisive: false };
+}
+
+function applyMethodConcentration(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  const methodCounts = new Map<string, number>();
+  for (const tx of txs) {
+    const m = tx.methodId?.slice(0, 10).toLowerCase() ?? "0x";
+    methodCounts.set(m, (methodCounts.get(m) ?? 0) + 1);
+  }
+  const topMethodPct = Math.max(...methodCounts.values()) / txs.length;
+  if (topMethodPct > 0.8) {
+    signals.push(`High method concentration: ${(topMethodPct * 100).toFixed(0)}% same method`);
+    return score - 25;
+  }
+  if (topMethodPct < 0.3) {
+    signals.push("Diverse method usage (human-like)");
+    return score + 10;
+  }
+  return score;
+}
+
+function applyIntervalVariance(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  const timestamps = txs.map(tx => tx.timestamp).sort((a, b) => a - b);
+  if (timestamps.length < 3) return score;
+
+  const intervals: number[] = [];
+  for (let i = 1; i < timestamps.length; i++) {
+    intervals.push(timestamps[i] - timestamps[i - 1]);
+  }
+  const mean = intervals.reduce((s, v) => s + v, 0) / intervals.length;
+  const variance = intervals.reduce((s, v) => s + (v - mean) ** 2, 0) / intervals.length;
+  const cv = mean > 0 ? Math.sqrt(variance) / mean : 0;
+
+  if (cv < 0.3) {
+    signals.push(`Low interval variance (CV=${cv.toFixed(2)}) — bot-like regularity`);
+    return score - 20;
+  }
+  if (cv > 1.5) {
+    signals.push(`High interval variance (CV=${cv.toFixed(2)}) — human-like irregularity`);
+    return score + 10;
+  }
+  return score;
+}
+
+function applyHourEntropy(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  const hourCounts = new Array(24).fill(0) as number[];
+  for (const tx of txs) {
+    hourCounts[new Date(tx.timestamp).getUTCHours()]++;
+  }
+  const activeHours = hourCounts.filter(c => c > 0).length;
+
+  if (activeHours >= 20) {
+    signals.push(`Active in ${activeHours}/24 hours — always-on pattern`);
+    return score - 15;
+  }
+  if (activeHours <= 10) {
+    signals.push(`Active in ${activeHours}/24 hours — working-hours pattern`);
+    return score + 10;
+  }
+  return score;
+}
+
+function applyZeroValueRate(
+  txs: readonly TransactionSummary[],
+  score: number,
+  signals: string[],
+): number {
+  const zeroValueTxs = txs.filter(tx => tx.value === "0" || tx.value === "").length;
+  const zeroValueRate = zeroValueTxs / txs.length;
+  if (zeroValueRate > 0.7) {
+    signals.push(`${(zeroValueRate * 100).toFixed(0)}% zero-value transactions — automation signal`);
+    return score - 10;
+  }
+  return score;
 }
