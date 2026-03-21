@@ -186,7 +186,7 @@ function applyHourEntropy(
 ): number {
   const hourCounts = new Array(24).fill(0) as number[];
   for (const tx of txs) {
-    hourCounts[new Date(tx.timestamp).getUTCHours()]++;
+    hourCounts[new Date(tx.timestamp * 1000).getUTCHours()]++;
   }
   const activeHours = hourCounts.filter(c => c > 0).length;
 
@@ -269,8 +269,9 @@ function applyGasLimitConsistency(
 ): number {
   if (txs.length < 10) return score;
   const limits = txs
-    .filter((tx) => tx.gasLimit != null)
-    .map((tx) => Number(tx.gasLimit));
+    .filter((tx) => tx.gasLimit != null && tx.gasLimit !== "")
+    .map((tx) => Number(tx.gasLimit))
+    .filter((v) => !isNaN(v) && v > 0);
   if (limits.length < 10) return score;
   const mean = limits.reduce((a, b) => a + b, 0) / limits.length;
   if (mean === 0) return score;
@@ -295,7 +296,7 @@ function applyValueEntropy(
   if (txs.length < 10) return score;
   const buckets = [0, 0, 0, 0, 0, 0, 0];
   for (const tx of txs) {
-    const val = Number(BigInt(tx.value || "0")) / 1e18;
+    const val = parseFloat(tx.value || "0") / 1e18;
     if (val === 0) buckets[0]++;
     else if (val < 0.001) buckets[1]++;
     else if (val < 0.01) buckets[2]++;
@@ -335,7 +336,7 @@ function applyNonceGapRate(
   for (let i = 1; i < sorted.length; i++) {
     if (sorted[i].nonce! - sorted[i - 1].nonce! > 1) gaps++;
   }
-  const rate = gaps / withNonce.length;
+  const rate = gaps / (withNonce.length - 1);
   if (rate === 0 && withNonce.length >= 50) {
     signals.push("Zero nonce gaps across 50+ txs — bot signal");
     return score - 5;

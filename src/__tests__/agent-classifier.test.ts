@@ -41,9 +41,11 @@ describe("Counterparty concentration (Herfindahl)", () => {
   });
 
   test("diverse counterparties raises humanScore", () => {
-    // Use diverse methods + diverse counterparties + diverse values to avoid other heuristics dragging score down
+    // Use diverse methods + diverse counterparties + diverse values + working-hours timestamps
     const methods = ["0xa9059cbb", "0x095ea7b3", "0x7ff36ab5", "0x38ed1739", "0x"];
     const values = ["0", "1000000000000000000", "500000000000000000", "100000000000000", "2000000000000000000"];
+    // Cluster timestamps in 8 working hours (10:00-17:00 UTC) across multiple days
+    const baseTs = 1700035200; // 2023-11-15 10:00 UTC
     const txs = makeTxs(
       Array(20)
         .fill(null)
@@ -52,6 +54,7 @@ describe("Counterparty concentration (Herfindahl)", () => {
           methodId: methods[i % methods.length],
           value: values[i % values.length],
           gasLimit: String(21000 + i * 1000),
+          timestamp: baseTs + Math.floor(i / 3) * 86400 + (i % 3) * 3600,
         })),
     );
     const result = computeWalletClassification(txs);
