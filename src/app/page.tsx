@@ -127,6 +127,10 @@ function Home() {
       const data: AnalyzeResponse = await res.json();
       const uiScore = formatForUI(data.trustScore);
 
+      setLoadingSteps(prev => prev.map((s, i) =>
+        i === 0 ? { ...s, label: `Detected: ${uiScore.chainId}`, status: "complete" as const } : s
+      ));
+
       setResult({
         trustScore: uiScore,
         transactions: [...data.transactions],
