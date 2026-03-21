@@ -1414,6 +1414,29 @@ body {
   color: #f2f0eb;
 }
 
+/* ─── TABLE FOOTER ─── */
+.aa-table-footer {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--color-border-subtle);
+  text-align: center;
+}
+
+.aa-table-limit-note {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.aa-table-explorer-link {
+  color: var(--color-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.aa-table-explorer-link:hover {
+  text-decoration: underline;
+}
+
 /* ─── COPY CELL ─── */
 .aa-copy-cell {
   display: inline-flex;

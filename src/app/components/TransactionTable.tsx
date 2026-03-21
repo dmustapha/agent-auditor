@@ -131,6 +131,22 @@ export function TransactionTable({ transactions, chainId, totalCount }: Transact
           </tbody>
         </table>
       </div>
+      {totalCount && totalCount > transactions.length && (
+        <div className="aa-table-footer">
+          <p className="aa-table-limit-note">
+            Showing {transactions.length} of {totalCount.toLocaleString()} transactions.
+            Full history available on{" "}
+            <a
+              href={`${explorerBase}/address/${transactions[0]?.from || ""}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="aa-table-explorer-link"
+            >
+              block explorer ↗
+            </a>
+          </p>
+        </div>
+      )}
     </div>
   );
 }
