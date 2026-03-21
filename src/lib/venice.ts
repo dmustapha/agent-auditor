@@ -298,19 +298,58 @@ Pre-classified agent type: ${metrics.agentType} | ERC-4337: ${metrics.isERC4337}
 Most called contracts: ${metrics.mostCalledContracts.slice(0, 5).join(", ") || "N/A"}
 ` : "";
 
+  const walletSection = metrics?.walletClassification ? `
+=== WALLET CLASSIFICATION (GROUND TRUTH) ===
+Human score: ${metrics.walletClassification.humanScore}/100
+Is contract: ${metrics.walletClassification.isDefinitelyContract}
+Is ERC-4337: ${metrics.walletClassification.isERC4337}
+Tier 1 decisive: ${metrics.walletClassification.tier1Decisive}
+Signals:
+${metrics.walletClassification.signals.map(s => `  - ${s}`).join("\n")}
+` : "";
+
+  const groundTruthSection = metrics ? `
+=== GROUND TRUTH VALUES (use these, do not fabricate) ===
+Success rate: ${(metrics.successRate * 100).toFixed(1)}%
+Net ETH flow: ${metrics.netFlowETH} ETH
+Protocols detected: ${metrics.protocolsUsed.length > 0 ? metrics.protocolsUsed.join(", ") : "none detected locally"}
+Total gas spent: ${(Number(metrics.totalGasSpentWei) / 1e18).toFixed(6)} ETH
+Largest single tx: ${(Number(BigInt(metrics.largestSingleTxWei)) / 1e18).toFixed(6)} ETH
+` : "";
+
   const contractSection = sanitizedData.smartContractData ? `
 === CONTRACT DATA ===
 Verified: ${sanitizedData.smartContractData.isVerified} | Name: ${sanitizedData.smartContractData.name ?? "N/A"}
 ` : "";
 
-  const balanceSection = sanitizedData.coinBalanceHistory?.length ? `
-=== BALANCE TREND (last 10 points) ===
-${JSON.stringify(sanitizedData.coinBalanceHistory.slice(-10), null, 2)}
-` : "";
+  const balanceSection = sanitizedData.coinBalanceHistory?.length ? (() => {
+    try {
+      const sorted = [...sanitizedData.coinBalanceHistory].sort((a, b) => a.timestamp - b.timestamp);
+      const first = sorted[0];
+      const last = sorted[sorted.length - 1];
+      const firstETH = (Number(BigInt(first.value || "0")) / 1e18).toFixed(6);
+      const lastETH = (Number(BigInt(last.value || "0")) / 1e18).toFixed(6);
+      const dataPoints = sorted.length;
+      return `
+=== BALANCE TREND ===
+Data points: ${dataPoints}
+Earliest: ${firstETH} ETH (${new Date(first.timestamp).toISOString()})
+Latest: ${lastETH} ETH (${new Date(last.timestamp).toISOString()})
+`;
+    } catch { return ""; }
+  })() : "";
 
   const eventsSection = sanitizedData.eventLogs?.length ? `
 === RECENT EVENTS (last 10) ===
 ${JSON.stringify(sanitizedData.eventLogs.slice(-10), null, 2)}
+` : "";
+
+  const addressInfoSection = sanitizedData.addressInfo ? `
+=== ADDRESS INFO ===
+Type: ${sanitizedData.addressInfo.addressType}
+Is contract: ${sanitizedData.addressInfo.isContract}
+ENS: ${sanitizedData.addressInfo.ensName ?? "none"}
+Implementation: ${sanitizedData.addressInfo.implementationAddress ?? "N/A"}
 ` : "";
 
   const userMessage = `Analyze this ${sanitizedData.chainId.toUpperCase()} chain agent:
@@ -320,7 +359,7 @@ Chain: ${sanitizedData.chainId}
 Transaction count: ${sanitizedData.transactions.length}
 Token transfer count: ${sanitizedData.tokenTransfers.length}
 Unique contracts called: ${new Set(sanitizedData.contractCalls.map((c) => c.contract)).size}
-${metricsSection}${contractSection}
+${metricsSection}${walletSection}${groundTruthSection}${addressInfoSection}${contractSection}${balanceSection}${eventsSection}
 === RECENT TRANSACTIONS (last 20) ===
 ${JSON.stringify(sanitizedData.transactions.slice(-20), null, 2)}
 
@@ -328,8 +367,7 @@ Token transfers (last 20):
 ${JSON.stringify(sanitizedData.tokenTransfers.slice(-20), null, 2)}
 
 Contract interactions (last 20):
-${JSON.stringify(sanitizedData.contractCalls.slice(-20), null, 2)}
-${balanceSection}${eventsSection}`;
+${JSON.stringify(sanitizedData.contractCalls.slice(-20), null, 2)}`;
 
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
