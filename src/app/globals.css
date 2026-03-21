@@ -360,6 +360,19 @@ body {
 
 .aa-stat-sep { color: #252529; }
 
+/* ─── SESSION STATS EMPTY ─── */
+.aa-session-stats--empty {
+  padding: 0.375rem 0;
+  text-align: center;
+}
+
+.aa-stats-empty-label {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 /* ─── HERO TRANSITIONS ─── */
 
 .aa-hero-kicker,
