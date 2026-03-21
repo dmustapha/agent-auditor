@@ -16,6 +16,12 @@ export interface ChainConfig {
   readonly explorer: string;
 }
 
+// ─── Agent Classification ───────────────────────────────────────────────────
+
+export type AgentType =
+  | "KEEPER" | "ORACLE" | "LIQUIDATOR" | "MEV_BOT"
+  | "BRIDGE_RELAYER" | "DEX_TRADER" | "UNKNOWN";
+
 // ─── Blockscout Response Types ───────────────────────────────────────────────
 
 export interface BlockscoutTransaction {
@@ -24,6 +30,8 @@ export interface BlockscoutTransaction {
   readonly to: { readonly hash: string } | null;
   readonly value: string;
   readonly gas_used: string;
+  readonly gas_limit?: string;
+  readonly nonce?: number;
   readonly timestamp: string;
   readonly method: string | null;
   readonly decoded_input: { readonly method_id: string } | null;
@@ -48,6 +56,27 @@ export interface BlockscoutPaginatedResponse<T> {
   readonly next_page_params: { readonly block_number: number; readonly index: number } | null;
 }
 
+export interface BlockscoutSmartContract {
+  readonly is_verified: boolean;
+  readonly name: string | null;
+  readonly abi: unknown[] | null;
+  readonly source_code: string | null;
+}
+
+export interface BlockscoutCoinBalanceHistoryItem {
+  readonly block_number: number;
+  readonly block_timestamp: string;
+  readonly value: string;
+}
+
+export interface BlockscoutLog {
+  readonly transaction_hash: string;
+  readonly topics: readonly string[];
+  readonly data: string;
+  readonly block_timestamp: string;
+  readonly address: { readonly hash: string };
+}
+
 // ─── Processed Data Types ────────────────────────────────────────────────────
 
 export interface TransactionSummary {
@@ -56,6 +85,8 @@ export interface TransactionSummary {
   readonly to: string;
   readonly value: string;
   readonly gasUsed: string;
+  readonly gasLimit?: string;
+  readonly nonce?: number;
   readonly timestamp: number;
   readonly methodId: string;
 }
@@ -74,12 +105,59 @@ export interface ContractCall {
   readonly timestamp: number;
 }
 
+// ─── Agent Metrics ──────────────────────────────────────────────────────────
+
+export interface AgentMetrics {
+  readonly avgGasPerTx: number;
+  readonly totalGasSpentWei: string;
+  readonly txFrequencyPerDay: number;
+  readonly activeHoursUTC: number[];
+  readonly successRate: number;
+  readonly uniqueCounterparties: number;
+  readonly largestSingleTxWei: string;
+  readonly nonceGaps: number;
+  readonly firstSeenTimestamp: number | null;
+  readonly lastSeenTimestamp: number | null;
+  readonly mostCalledContracts: readonly string[];
+  readonly agentType: AgentType;
+  readonly isERC4337: boolean;
+}
+
+// ─── Blockscout Enrichment Types ────────────────────────────────────────────
+
+export interface SmartContractData {
+  readonly isVerified: boolean;
+  readonly name: string | null;
+  readonly abi: unknown[] | null;
+  readonly sourceCode: string | null;
+}
+
+export interface CoinBalancePoint {
+  readonly timestamp: number;
+  readonly value: string;
+  readonly blockNumber: number;
+}
+
+export interface EventLog {
+  readonly txHash: string;
+  readonly topics: readonly string[];
+  readonly data: string;
+  readonly timestamp: number;
+  readonly contractAddress: string;
+}
+
+// ─── Agent Transaction Data ─────────────────────────────────────────────────
+
 export interface AgentTransactionData {
   readonly address: string;
   readonly chainId: ChainId;
   readonly transactions: readonly TransactionSummary[];
   readonly tokenTransfers: readonly TokenTransfer[];
   readonly contractCalls: readonly ContractCall[];
+  readonly computedMetrics?: AgentMetrics;
+  readonly smartContractData?: SmartContractData;
+  readonly coinBalanceHistory?: CoinBalancePoint[];
+  readonly eventLogs?: EventLog[];
 }
 
 // ─── ERC-8004 Types ──────────────────────────────────────────────────────────
@@ -124,6 +202,23 @@ export interface TrustScore {
   readonly summary: string;
   readonly recommendation: "SAFE" | "CAUTION" | "BLOCKLIST";
   readonly analysisTimestamp: string;
+  readonly agentType: AgentType;
+  readonly behavioralNarrative: string;
+  readonly performanceScore: number;
+  readonly operationalPattern: {
+    readonly avgIntervalHours: number;
+    readonly peakHoursUTC: readonly number[];
+    readonly consistencyScore: number;
+  };
+  readonly financialSummary: {
+    readonly totalGasSpentETH: string;
+    readonly netFlowETH: string;
+    readonly largestSingleTxETH: string;
+  };
+  readonly protocolsUsed: readonly string[];
+  readonly funFact: string;
+  readonly anomalies: readonly string[];
+  readonly isLikelyHumanWallet: boolean;
 }
 
 export interface TrustFlag {
@@ -156,7 +251,7 @@ export interface ResolvedInput {
 // ─── Autonomous Loop Types ───────────────────────────────────────────────────
 
 export interface LoopCheckpoint {
-  readonly [chainId: string]: bigint; // last processed block per chain
+  readonly [chainId: string]: bigint;
 }
 
 export interface LoopStatus {
@@ -208,6 +303,7 @@ export interface AnalyzeResponse {
   readonly trustScore: TrustScore;
   readonly agentIdentity: AgentIdentity | null;
   readonly transactions: readonly TransactionSummary[];
+  readonly totalTransactionCount?: number;
 }
 
 export interface AnalyzeErrorResponse {
@@ -234,4 +330,84 @@ export interface UITrustScore {
   readonly flags: readonly TrustFlag[];
   readonly summary: string;
   readonly timestamp: string;
+  readonly agentType: AgentType;
+  readonly behavioralNarrative: string;
+  readonly performanceScore: number;
+  readonly operationalPattern: {
+    readonly avgIntervalHours: number;
+    readonly peakHoursUTC: readonly number[];
+    readonly consistencyScore: number;
+  };
+  readonly financialSummary: {
+    readonly totalGasSpentETH: string;
+    readonly netFlowETH: string;
+    readonly largestSingleTxETH: string;
+  };
+  readonly protocolsUsed: readonly string[];
+  readonly funFact: string;
+  readonly anomalies: readonly string[];
+  readonly isLikelyHumanWallet: boolean;
+}
+
+// ─── Sidebar / localStorage Types ───────────────────────────────────────────
+
+export interface AuditRecord {
+  readonly address: string;
+  readonly chainId: ChainId;
+  readonly score: number;
+  readonly recommendation: "SAFE" | "CAUTION" | "BLOCKLIST";
+  readonly timestamp: number;
+  readonly agentType: AgentType;
+}
+
+export interface WatchlistEntry extends AuditRecord {
+  readonly pinnedAt: number;
+}
+
+export interface ThreatFeedEntry {
+  readonly agentAddress: string;
+  readonly reason: string;
+  readonly blockNumber: bigint;
+  readonly txHash: string;
+  readonly timestamp: number;
+}
+
+export interface SessionStats {
+  readonly totalAudited: number;
+  readonly bySafe: number;
+  readonly byCaution: number;
+  readonly byBlocklist: number;
+}
+
+// ─── Directory Types ────────────────────────────────────────────────────────
+
+export type SortField = "score" | "activity" | "gas" | "lastActive";
+
+export interface DirectoryAgent {
+  readonly address: string;
+  readonly chainId: ChainId;
+  readonly name: string;
+  readonly agentType: AgentType;
+  readonly score: number;
+  readonly recommendation: "SAFE" | "CAUTION" | "BLOCKLIST";
+  readonly behavioralNarrative: string;
+  readonly financialSummary: {
+    readonly totalGasSpentETH: string;
+    readonly netFlowETH: string;
+  };
+  readonly operationalPattern: {
+    readonly peakHoursUTC: readonly number[];
+    readonly consistencyScore: number;
+  };
+  readonly protocolsUsed: readonly string[];
+  readonly funFact: string;
+  readonly anomalies: readonly string[];
+  readonly txCount: number;
+  readonly lastActive: number;
+  readonly source: "seed" | "erc8004" | "olas";
+}
+
+export interface DirectoryResponse {
+  readonly agents: readonly DirectoryAgent[];
+  readonly timestamp: number;
 }
