@@ -11,7 +11,7 @@ interface AgentEcosystemProps {
 }
 
 const EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
-const DISPLAY_ORDER: AgentType[] = ["KEEPER", "ORACLE", "BRIDGE_RELAYER", "LIQUIDATOR", "MEV_BOT", "DEX_TRADER"];
+const DISPLAY_ORDER: AgentType[] = ["KEEPER", "ORACLE", "BRIDGE_RELAYER", "LIQUIDATOR", "MEV_BOT", "DEX_TRADER", "GOVERNANCE", "YIELD_OPTIMIZER"];
 
 export function AgentEcosystem({ agents, activeFilter, onFilterChange }: AgentEcosystemProps) {
   const svgRef = useRef<SVGSVGElement>(null);

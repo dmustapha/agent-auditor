@@ -20,7 +20,8 @@ export interface ChainConfig {
 
 export type AgentType =
   | "KEEPER" | "ORACLE" | "LIQUIDATOR" | "MEV_BOT"
-  | "BRIDGE_RELAYER" | "DEX_TRADER" | "UNKNOWN";
+  | "BRIDGE_RELAYER" | "DEX_TRADER" | "GOVERNANCE"
+  | "YIELD_OPTIMIZER" | "UNKNOWN";
 
 // ─── Blockscout Response Types ───────────────────────────────────────────────
 
