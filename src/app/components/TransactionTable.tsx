@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import type { ChainId, TransactionSummary } from "@/lib/types";
 import { getChainConfig } from "@/lib/chains";
 
@@ -19,6 +20,36 @@ function formatValue(wei: string): string {
   if (eth >= 0.001) return eth.toFixed(4);
   if (eth >= 0.000001) return eth.toExponential(3);
   return eth.toExponential(2);
+}
+
+function CopyCell({ address, display }: { address: string; display: string }) {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 1200);
+    } catch { /* clipboard API may fail in some contexts */ }
+  };
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  return (
+    <span className="aa-copy-cell">
+      <span className="aa-mono-cell">{display}</span>
+      <button
+        className="aa-copy-mini"
+        onClick={handleCopy}
+        aria-label={`Copy address ${address}`}
+        title="Copy full address"
+      >
+        {copied ? "✓" : "⧉"}
+      </button>
+    </span>
+  );
 }
 
 export function TransactionTable({ transactions, chainId, totalCount }: TransactionTableProps) {
@@ -80,8 +111,8 @@ export function TransactionTable({ transactions, chainId, totalCount }: Transact
                     {truncateHash(tx.hash)}
                   </a>
                 </td>
-                <td className="aa-mono-cell">{truncateHash(tx.from)}</td>
-                <td className="aa-mono-cell">{truncateHash(tx.to)}</td>
+                <td><CopyCell address={tx.from} display={truncateHash(tx.from)} /></td>
+                <td><CopyCell address={tx.to} display={truncateHash(tx.to)} /></td>
                 <td style={{ textAlign: "right", color: "#f2f0eb", fontSize: "0.8125rem" }}>
                   {formatValue(tx.value)}
                 </td>

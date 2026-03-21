@@ -1401,6 +1401,29 @@ body {
   color: #f2f0eb;
 }
 
+/* ─── COPY CELL ─── */
+.aa-copy-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.aa-copy-mini {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0.125rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.aa-copy-cell:hover .aa-copy-mini,
+.aa-copy-mini:focus-visible {
+  opacity: 1;
+}
+
 /* ─── ERROR STATE ─── */
 .aa-error-card {
   background: rgba(239, 68, 68, 0.06);
