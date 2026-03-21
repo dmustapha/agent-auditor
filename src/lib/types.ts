@@ -133,6 +133,8 @@ export interface AgentMetrics {
   readonly mostCalledContracts: readonly string[];
   readonly agentType: AgentType;
   readonly isERC4337: boolean;
+  readonly netFlowETH: string;
+  readonly protocolsUsed: readonly string[];
 }
 
 // ─── Blockscout Enrichment Types ────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import type { AgentMetrics, AgentTransactionData } from "./types";
-import { classifyAgentType, detectERC4337 } from "./agent-classifier";
+import { classifyAgentType, detectERC4337, inferProtocols } from "./agent-classifier";
 
-export function computeMetrics(data: Pick<AgentTransactionData, "address" | "chainId" | "transactions" | "tokenTransfers" | "contractCalls">): AgentMetrics {
+export function computeMetrics(data: Pick<AgentTransactionData, "address" | "chainId" | "transactions" | "tokenTransfers" | "contractCalls" | "coinBalanceHistory">): AgentMetrics {
   const { address, transactions } = data;
 
   // Gas metrics
@@ -73,6 +73,21 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
     .slice(0, 5)
     .map(([addr]) => addr);
 
+  // Net ETH flow: latest balance minus earliest balance
+  const balanceHistory = data.coinBalanceHistory ?? [];
+  let netFlowETH = "0";
+  if (balanceHistory.length >= 2) {
+    const sorted = [...balanceHistory].sort((a, b) => a.timestamp - b.timestamp);
+    try {
+      const earliest = BigInt(sorted[0].value || "0");
+      const latest = BigInt(sorted[sorted.length - 1].value || "0");
+      const diff = latest - earliest;
+      const sign = diff < 0n ? "-" : "";
+      const abs = diff < 0n ? -diff : diff;
+      netFlowETH = `${sign}${(Number(abs) / 1e18).toFixed(6)}`;
+    } catch { /* non-numeric balance value from Blockscout, keep "0" */ }
+  }
+
   return {
     avgGasPerTx,
     totalGasSpentWei: totalGas.toString(),
@@ -87,5 +102,7 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
     mostCalledContracts,
     agentType: classifyAgentType(transactions),
     isERC4337: detectERC4337(transactions),
+    netFlowETH,
+    protocolsUsed: inferProtocols(transactions),
   };
 }

@@ -213,7 +213,7 @@ export async function fetchAgentData(
       getAddressInfo(chainId, address),
     ]);
 
-  const computedMetrics = computeMetrics({ address, chainId, transactions, tokenTransfers, contractCalls });
+  const computedMetrics = computeMetrics({ address, chainId, transactions, tokenTransfers, contractCalls, coinBalanceHistory });
 
   return {
     address,
