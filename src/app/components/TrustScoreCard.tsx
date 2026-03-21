@@ -93,6 +93,27 @@ function netFlowSign(val: string): "positive" | "negative" | "neutral" {
   return "neutral";
 }
 
+function gasLabel(ethValue: number): string {
+  if (ethValue < 0.01) return "Minimal activity";
+  if (ethValue < 0.1) return "Light spender";
+  if (ethValue < 1.0) return "Moderate spender";
+  if (ethValue < 10) return "Heavy spender";
+  return "Whale-tier gas usage";
+}
+
+function netFlowLabel(ethValue: number): { text: string; color: string; arrow: string } {
+  if (Math.abs(ethValue) < 0.001) return { text: "Neutral flow", color: "var(--color-text-dim)", arrow: "—" };
+  if (ethValue > 0) return { text: "Net accumulator", color: "#22c55e", arrow: "\u2191" };
+  return { text: "Net spender", color: "#ef4444", arrow: "\u2193" };
+}
+
+function txSizeLabel(ethValue: number): string {
+  if (ethValue < 0.01) return "Micro transactions";
+  if (ethValue < 1) return "Standard range";
+  if (ethValue < 10) return "Significant";
+  return "Whale-sized";
+}
+
 // ─── WAAPI Helpers ────────────────────────────────────────────────────────────
 
 const SPRING_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
@@ -721,6 +742,9 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
               <span className="aa-eth-sym" aria-hidden="true">Ξ</span>
               {score.financialSummary.totalGasSpentETH}
             </span>
+            <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.15rem" }}>
+              {gasLabel(parseFloat(score.financialSummary.totalGasSpentETH || "0"))}
+            </span>
           </div>
           <div className="aa-fin-item">
             <span className="aa-fin-label">Net Flow</span>
@@ -728,12 +752,23 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
               <span className="aa-eth-sym" aria-hidden="true">Ξ</span>
               {score.financialSummary.netFlowETH}
             </span>
+            {(() => {
+              const flow = netFlowLabel(parseFloat(score.financialSummary.netFlowETH || "0"));
+              return (
+                <span style={{ fontSize: "0.7rem", color: flow.color, display: "block", marginTop: "0.15rem" }}>
+                  {flow.arrow} {flow.text}
+                </span>
+              );
+            })()}
           </div>
           <div className="aa-fin-item">
             <span className="aa-fin-label">Largest Tx</span>
             <span className="aa-fin-value">
               <span className="aa-eth-sym" aria-hidden="true">Ξ</span>
               {score.financialSummary.largestSingleTxETH}
+            </span>
+            <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.15rem" }}>
+              {txSizeLabel(parseFloat(score.financialSummary.largestSingleTxETH || "0"))}
             </span>
           </div>
         </div>
