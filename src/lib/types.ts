@@ -16,6 +16,14 @@ export interface ChainConfig {
   readonly explorer: string;
 }
 
+export interface AddressInfo {
+  readonly isContract: boolean;
+  readonly addressType: "EOA" | "contract" | "token" | "proxy";
+  readonly implementationAddress: string | null;
+  readonly ensName: string | null;
+  readonly transactionsCount: number;
+}
+
 // ─── Agent Classification ───────────────────────────────────────────────────
 
 export type AgentType =
@@ -159,6 +167,7 @@ export interface AgentTransactionData {
   readonly smartContractData?: SmartContractData;
   readonly coinBalanceHistory?: CoinBalancePoint[];
   readonly eventLogs?: EventLog[];
+  readonly addressInfo?: AddressInfo;
 }
 
 // ─── ERC-8004 Types ──────────────────────────────────────────────────────────
