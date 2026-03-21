@@ -7,7 +7,7 @@ import { SmartInput, detectInputType } from "./components/SmartInput";
 import { ChainSelector } from "./components/ChainSelector";
 import { TrustScoreCard } from "./components/TrustScoreCard";
 import { TransactionTable } from "./components/TransactionTable";
-import { LoadingState } from "./components/LoadingState";
+import { LoadingState, type LoadingStep } from "./components/LoadingState";
 import { AgentDirectory } from "./components/AgentDirectory";
 import { AgentGate } from "./components/AgentGate";
 import { useRecentAudits } from "@/hooks/useRecentAudits";
@@ -80,7 +80,7 @@ function Home() {
   } | null>(null);
   const [selectedChain, setSelectedChain] = useState<ChainId | "all">("all");
   const [inputValue, setInputValue] = useState("");
-  const [loadingSteps, setLoadingSteps] = useState<Array<{ label: string; status: "pending" | "active" | "complete" }>>([]);
+  const [loadingSteps, setLoadingSteps] = useState<LoadingStep[]>([]);
   const [activeFilter, setActiveFilter] = useState<AgentType | null>(null);
   const [sortField, setSortField] = useState<SortField>("score");
   const [forceAnalysis, setForceAnalysis] = useState(false);
@@ -113,20 +113,39 @@ function Home() {
     stepTimersRef.current.forEach(clearTimeout);
     stepTimersRef.current = [];
 
-    const firstLabel = chain === "all" ? "Detecting chain..." : "Resolving address...";
     setLoadingSteps([
-      { label: firstLabel, status: "active" },
-      { label: `Fetching transactions${chain !== "all" ? ` (${chain})` : ""}...`, status: "pending" },
-      { label: "Analyzing with AI...", status: "pending" },
+      { label: "Resolving address...", status: "active" },
+      { label: "Scanning network...", status: "pending" },
+      { label: "Fetching on-chain data...", status: "pending" },
+      { label: "Running AI analysis...", status: "pending" },
+      { label: "Building intelligence report...", status: "pending" },
     ]);
 
     stepTimersRef.current.push(
-      setTimeout(() => setLoadingSteps(prev => prev.map((s, i) =>
-        i === 0 ? { ...s, status: "complete" } : i === 1 ? { ...s, status: "active" } : s
-      )), 800),
-      setTimeout(() => setLoadingSteps(prev => prev.map((s, i) =>
-        i <= 1 ? { ...s, status: "complete" } : i === 2 ? { ...s, status: "active" } : s
-      )), 2500),
+      // Step 1 → 2 at 800ms
+      setTimeout(() => {
+        setLoadingSteps((prev) => prev.map((s, i) =>
+          i === 0 ? { ...s, status: "complete" as const, detail: "Address resolved" }
+          : i === 1 ? { ...s, status: "active" as const }
+          : s
+        ));
+      }, 800),
+      // Step 2 → 3 at 2s
+      setTimeout(() => {
+        setLoadingSteps((prev) => prev.map((s, i) =>
+          i === 1 ? { ...s, status: "complete" as const, detail: "Transactions found" }
+          : i === 2 ? { ...s, status: "active" as const }
+          : s
+        ));
+      }, 2000),
+      // Step 3 → 4 at 3s
+      setTimeout(() => {
+        setLoadingSteps((prev) => prev.map((s, i) =>
+          i === 2 ? { ...s, status: "complete" as const, detail: "Data assembled" }
+          : i === 3 ? { ...s, status: "active" as const }
+          : s
+        ));
+      }, 3000),
     );
 
     try {
@@ -147,9 +166,17 @@ function Home() {
       setHasAgentIdentity(data.agentIdentity != null);
       const uiScore = formatForUI(data.trustScore);
 
-      setLoadingSteps(prev => prev.map((s, i) =>
-        i === 0 ? { ...s, label: `Detected: ${uiScore.chainId}`, status: "complete" as const } : s
+      // Complete steps 4+5 after successful fetch
+      setLoadingSteps((prev) => prev.map((s, i) =>
+        i <= 2 ? { ...s, status: "complete" as const }
+        : i === 3 ? { ...s, status: "complete" as const, detail: "Analysis complete" }
+        : i === 4 ? { ...s, status: "active" as const }
+        : s
       ));
+
+      // Brief delay for step 5 to show
+      await new Promise((r) => setTimeout(r, 500));
+      setLoadingSteps((prev) => prev.map((s) => ({ ...s, status: "complete" as const })));
 
       // Result is set even when gate fires; forceAnalysis=true later reveals it without a re-fetch
       setResult({

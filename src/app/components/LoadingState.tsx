@@ -1,87 +1,53 @@
-export function LoadingState() {
+"use client";
+
+export interface LoadingStep {
+  readonly label: string;
+  readonly detail?: string;
+  readonly status: "pending" | "active" | "complete";
+}
+
+interface LoadingStateProps {
+  readonly steps: readonly LoadingStep[];
+}
+
+export function LoadingState({ steps }: LoadingStateProps) {
   return (
-    <div className="aa-loading-card" aria-label="Loading analysis" aria-busy="true">
-      {/* Agent header skeleton */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          <div className="aa-skeleton" style={{ height: "14px", width: "200px" }} />
-          <div className="aa-skeleton" style={{ height: "22px", width: "70px", borderRadius: "9999px" }} />
-        </div>
-        <div className="aa-skeleton" style={{ height: "22px", width: "80px", borderRadius: "9999px" }} />
-      </div>
-
-      {/* Score ring skeleton */}
-      <div
-        style={{
-          display: "flex",
-          gap: "2rem",
-          alignItems: "center",
-          marginBottom: "1.5rem",
-          paddingBottom: "1.5rem",
-          borderBottom: "1px solid #1e1e22",
-        }}
-      >
-        <div style={{ flex: 1 }}>
-          <div className="aa-skeleton" style={{ height: "12px", width: "100px", marginBottom: "0.75rem" }} />
-          <div className="aa-skeleton" style={{ height: "22px", width: "220px", marginBottom: "0.5rem" }} />
-          <div className="aa-skeleton" style={{ height: "12px", width: "140px" }} />
-        </div>
-        <div
-          className="aa-skeleton"
-          style={{ width: "140px", height: "140px", borderRadius: "50%", flexShrink: 0 }}
-        />
-      </div>
-
-      {/* Summary skeleton */}
-      <div
-        style={{
-          borderLeft: "3px solid #252529",
-          paddingLeft: "1.25rem",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <div className="aa-skeleton" style={{ height: "10px", width: "120px", marginBottom: "0.65rem" }} />
-        <div className="aa-skeleton" style={{ height: "12px", width: "100%", marginBottom: "0.5rem" }} />
-        <div className="aa-skeleton" style={{ height: "12px", width: "90%", marginBottom: "0.5rem" }} />
-        <div className="aa-skeleton" style={{ height: "12px", width: "75%" }} />
-      </div>
-
-      {/* Breakdown skeleton */}
-      <div
-        style={{
-          background: "#131316",
-          border: "1px solid #252529",
-          borderRadius: "12px",
-          padding: "1.5rem",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <div className="aa-skeleton" style={{ height: "10px", width: "120px", marginBottom: "1.25rem" }} />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem 2rem" }}>
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i}>
-              <div
-                style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.45rem" }}
-              >
-                <div className="aa-skeleton" style={{ height: "10px", width: "130px" }} />
-                <div className="aa-skeleton" style={{ height: "10px", width: "36px" }} />
-              </div>
-              <div className="aa-skeleton" style={{ height: "4px", width: "100%" }} />
+    <div style={{ maxWidth: "28rem", margin: "2rem auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+        {steps.map((step, i) => (
+          <div key={i}>
+            <div className={`aa-loading-step aa-loading-step--${step.status}`}>
+              {step.status === "complete" ? (
+                <svg className="aa-loading-check" width="10" height="10" viewBox="0 0 16 16" fill="#22c55e">
+                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" />
+                </svg>
+              ) : (
+                <div className={`aa-loading-dot aa-loading-dot--${step.status}`} />
+              )}
+              <span className={`aa-loading-label aa-loading-label--${step.status}`}>
+                {step.label}
+              </span>
             </div>
-          ))}
-        </div>
+            {step.status === "complete" && step.detail && (
+              <div className="aa-loading-detail">{step.detail}</div>
+            )}
+          </div>
+        ))}
       </div>
 
-      <p className="aa-loading-hint" aria-live="polite">
-        Fetching onchain data and running analysis&hellip;
-      </p>
+      {/* Skeleton placeholder */}
+      <div className="aa-skeleton">
+        <div className="aa-skeleton-bar" style={{ width: "100%" }} />
+        <div className="aa-skeleton-bar" style={{ width: "85%" }} />
+        <div className="aa-skeleton-bar" style={{ width: "70%" }} />
+        <div style={{ display: "flex", gap: "1rem" }}>
+          <div className="aa-skeleton-bar" style={{ width: "45%", height: "4rem" }} />
+          <div className="aa-skeleton-bar" style={{ width: "45%", height: "4rem" }} />
+        </div>
+        <div className="aa-skeleton-bar" style={{ width: "60%" }} />
+      </div>
+
+      <p className="aa-loading-hint">Analysis typically takes 10-20 seconds</p>
     </div>
   );
 }
