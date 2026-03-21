@@ -52,7 +52,6 @@ export function AgentEcosystem({ agents, activeFilter, onFilterChange }: AgentEc
     const circles = svg.querySelectorAll<SVGCircleElement>(".aa-ecosystem-segment");
     circles.forEach((circle, i) => {
       const targetDasharray = circle.getAttribute("data-dasharray") ?? "";
-      const [filled] = targetDasharray.split(" ").map(Number);
       const circumference = parseFloat(circle.getAttribute("data-circumference") ?? "264");
       circle.style.strokeDasharray = `0 ${circumference}`;
       circle.animate(

@@ -1851,6 +1851,30 @@ body {
   .aa-heatmap {
     grid-template-columns: repeat(12, 1fr);
   }
+
+  .aa-dossier {
+    grid-template-columns: 60px 1fr;
+  }
+  .aa-dossier-financials,
+  .aa-dossier-protocols {
+    display: none;
+  }
+  .aa-ecosystem {
+    display: none;
+  }
+  .aa-directory-toolbar {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .aa-dossier {
+    grid-template-columns: 1fr;
+  }
+  .aa-dossier-stamp {
+    flex-direction: row;
+    gap: 0.5rem;
+  }
 }
 
 /* ─── AGENT CLASSIFICATION PANEL ─── */
