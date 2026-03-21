@@ -1,48 +1,88 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Sidebar } from "./components/Sidebar";
 import { SmartInput, detectInputType } from "./components/SmartInput";
 import { ChainSelector } from "./components/ChainSelector";
 import { TrustScoreCard } from "./components/TrustScoreCard";
 import { TransactionTable } from "./components/TransactionTable";
 import { LoadingState } from "./components/LoadingState";
+import { AgentDirectory } from "./components/AgentDirectory";
+import { useRecentAudits } from "@/hooks/useRecentAudits";
+import { useDirectory } from "@/hooks/useDirectory";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { formatForUI } from "@/lib/trust-score";
 import type {
   ChainId,
-  InputType,
+  AgentType,
+  SortField,
   AnalyzeResponse,
   AnalyzeErrorResponse,
   UITrustScore,
   TransactionSummary,
 } from "@/lib/types";
 
-export default function Home() {
+const VALID_CHAINS = new Set(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "all"]);
+
+function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
     trustScore: UITrustScore;
     transactions: TransactionSummary[];
+    totalTransactionCount?: number;
   } | null>(null);
   const [selectedChain, setSelectedChain] = useState<ChainId | "all">("all");
   const [inputValue, setInputValue] = useState("");
+  const [loadingSteps, setLoadingSteps] = useState<Array<{ label: string; status: "pending" | "active" | "complete" }>>([]);
+  const [activeFilter, setActiveFilter] = useState<AgentType | null>(null);
+  const [sortField, setSortField] = useState<SortField>("score");
+  const { records: recentAudits, addAudit } = useRecentAudits();
+  const { agents: directoryAgents, allAgents, loading: directoryLoading, error: directoryError, lastSynced } = useDirectory(activeFilter, sortField);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const stepTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const lastSearchRef = useRef<{ input: string; chain: ChainId | "all" } | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initializedRef = useRef(false);
 
-  const handleSubmit = useCallback(() => {
-    const trimmed = inputValue.trim();
+  const runAudit = useCallback(async (input: string, chain: ChainId | "all") => {
+    const trimmed = input.trim();
     if (!trimmed || loading) return;
-    const { type } = detectInputType(trimmed);
-    handleAnalyze(trimmed, type);
-  }, [inputValue, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+    const { type: inputType } = detectInputType(trimmed);
 
-  async function handleAnalyze(input: string, inputType: InputType) {
+    lastSearchRef.current = { input, chain };
+
     setLoading(true);
     setError(null);
     setResult(null);
+
+    // Clear any prior timers
+    stepTimersRef.current.forEach(clearTimeout);
+    stepTimersRef.current = [];
+
+    const firstLabel = chain === "all" ? "Detecting chain..." : "Resolving address...";
+    setLoadingSteps([
+      { label: firstLabel, status: "active" },
+      { label: `Fetching transactions${chain !== "all" ? ` (${chain})` : ""}...`, status: "pending" },
+      { label: "Analyzing with AI...", status: "pending" },
+    ]);
+
+    stepTimersRef.current.push(
+      setTimeout(() => setLoadingSteps(prev => prev.map((s, i) =>
+        i === 0 ? { ...s, status: "complete" } : i === 1 ? { ...s, status: "active" } : s
+      )), 800),
+      setTimeout(() => setLoadingSteps(prev => prev.map((s, i) =>
+        i <= 1 ? { ...s, status: "complete" } : i === 2 ? { ...s, status: "active" } : s
+      )), 2500),
+    );
 
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input, inputType, chain: selectedChain }),
+        body: JSON.stringify({ input: trimmed, inputType, chain }),
       });
 
       if (!res.ok) {
@@ -52,61 +92,140 @@ export default function Home() {
       }
 
       const data: AnalyzeResponse = await res.json();
-
-      const chainNames: Record<string, string> = {
-        base: "Base",
-        gnosis: "Gnosis",
-        ethereum: "Ethereum",
-        arbitrum: "Arbitrum",
-        optimism: "Optimism",
-        polygon: "Polygon",
-      };
-
-      const recommendationColors: Record<string, string> = {
-        SAFE: "#22c55e",
-        CAUTION: "#eab308",
-        BLOCKLIST: "#ef4444",
-      };
-
-      const uiScore: UITrustScore = {
-        address: data.trustScore.agentAddress,
-        chainId: data.trustScore.chainId,
-        chainName: chainNames[data.trustScore.chainId] ?? data.trustScore.chainId,
-        score: data.trustScore.overallScore,
-        maxScore: 100,
-        breakdown: [
-          { label: "Transaction Patterns", value: data.trustScore.breakdown.transactionPatterns, max: 25 },
-          { label: "Contract Interactions", value: data.trustScore.breakdown.contractInteractions, max: 25 },
-          { label: "Fund Flow", value: data.trustScore.breakdown.fundFlow, max: 25 },
-          { label: "Behavioral Consistency", value: data.trustScore.breakdown.behavioralConsistency, max: 25 },
-        ],
-        recommendation: data.trustScore.recommendation,
-        recommendationColor: recommendationColors[data.trustScore.recommendation] ?? "#8f8a82",
-        flags: data.trustScore.flags,
-        summary: data.trustScore.summary,
-        timestamp: data.trustScore.analysisTimestamp,
-      };
+      const uiScore = formatForUI(data.trustScore);
 
       setResult({
         trustScore: uiScore,
         transactions: [...data.transactions],
+        totalTransactionCount: data.totalTransactionCount,
       });
+
+      addAudit({
+        address: uiScore.address,
+        chainId: uiScore.chainId,
+        score: uiScore.score,
+        recommendation: data.trustScore.recommendation,
+        timestamp: Date.now(),
+        agentType: data.trustScore.agentType,
+      });
+
+      // Update URL permalink
+      router.replace(`?address=${encodeURIComponent(uiScore.address)}&chain=${uiScore.chainId}`, { scroll: false });
     } catch {
       setError("Failed to connect to analysis service");
     } finally {
+      stepTimersRef.current.forEach(clearTimeout);
+      stepTimersRef.current = [];
       setLoading(false);
     }
-  }
+  }, [loading, addAudit, router]);
 
+  const handleSubmit = useCallback(() => {
+    runAudit(inputValue, selectedChain);
+  }, [inputValue, selectedChain, runAudit]);
+
+  const handleSelectAudit = useCallback((address: string, chainId: ChainId) => {
+    setInputValue(address);
+    setSelectedChain(chainId);
+    runAudit(address, chainId);
+  }, [runAudit]);
+
+  const handleNewSearch = useCallback(() => {
+    setResult(null);
+    setError(null);
+    setInputValue("");
+    router.replace("/", { scroll: false });
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, [router]);
+
+  // URL params: auto-populate and run on mount
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    const address = searchParams.get("address");
+    const chain = searchParams.get("chain");
+
+    if (address) {
+      setInputValue(address);
+      const validChain = chain && VALID_CHAINS.has(chain) ? (chain as ChainId | "all") : "all";
+      setSelectedChain(validChain);
+      // Defer to avoid running during render
+      setTimeout(() => runAudit(address, validChain), 0);
+    }
+  }, [searchParams, runAudit]);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onFocusSearch: useCallback(() => inputRef.current?.focus(), []),
+    onClear: useCallback(() => {
+      if (document.activeElement === inputRef.current) {
+        setInputValue("");
+      }
+    }, []),
+  });
+
+  const showHero = !result && !loading && !error;
   const hasContent = loading || error || result;
+
+  const searchForm = (
+    <div className="aa-form-row">
+      <SmartInput
+        value={inputValue}
+        onChange={setInputValue}
+        onSubmit={handleSubmit}
+        disabled={loading}
+        inputRef={inputRef}
+      />
+      <ChainSelector
+        value={selectedChain}
+        onChange={setSelectedChain}
+        disabled={loading}
+      />
+      <button
+        onClick={handleSubmit}
+        disabled={loading || !inputValue.trim()}
+        className={`aa-audit-btn${loading ? ' aa-audit-btn--loading' : ''}`}
+        aria-label={loading ? "Analyzing agent" : "Run forensic audit"}
+      >
+        <span>{loading ? 'Analyzing...' : 'Run Audit'}</span>
+        {loading ? (
+          <span className="aa-btn-spinner" aria-hidden="true" />
+        ) : (
+          <svg
+            className="aa-btn-arrow"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            aria-hidden="true"
+          >
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+        )}
+      </button>
+    </div>
+  );
 
   return (
     <div className="aa-shell">
-      <Sidebar activeItem="dashboard" />
+      <Sidebar
+        activeItem="dashboard"
+        recentAudits={recentAudits}
+        onSelectAudit={handleSelectAudit}
+        directoryAgents={allAgents}
+        activeFilter={activeFilter}
+        onFilterChange={setActiveFilter}
+      />
 
       <main className="aa-main" id="main-content">
-        {/* ─── HERO ─── */}
-        <section className="aa-hero" aria-label="Agent Auditor — forensic trust analysis">
+        {/* ─── HERO (always rendered, collapses via CSS class) ─── */}
+        <section
+          className={`aa-hero${showHero ? '' : ' aa-hero--collapsed'}`}
+          aria-label="Agent Auditor — forensic trust analysis"
+        >
           <p className="aa-hero-kicker">Forensic Trust Analysis</p>
           <h1 className="aa-hero-title">
             Know every agent<br />
@@ -116,7 +235,6 @@ export default function Home() {
             Real-time onchain trust scoring across EVM chains. Transaction patterns, fund flows, contract interactions — distilled into one authoritative score.
           </p>
 
-          {/* Stats row */}
           <div className="aa-hero-stats" aria-label="Platform statistics">
             <div>
               <span className="aa-stat-num">84k+</span>
@@ -132,53 +250,28 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Full-width input form */}
           <div className="aa-form-container" role="search" aria-label="Agent lookup form">
-            <label className="aa-form-label" htmlFor="agent-input">
-              Agent Identifier
-            </label>
-            <div className="aa-form-row">
-              <SmartInput
-                value={inputValue}
-                onChange={setInputValue}
-                onSubmit={handleSubmit}
-                disabled={loading}
-              />
-              <ChainSelector
-                value={selectedChain}
-                onChange={setSelectedChain}
-                disabled={loading}
-              />
-              <button
-                onClick={handleSubmit}
-                disabled={loading || !inputValue.trim()}
-                className="aa-audit-btn"
-                aria-label="Run forensic audit"
-              >
-                <span>Run Audit</span>
-                <svg
-                  className="aa-btn-arrow"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  aria-hidden="true"
-                >
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
+            {showHero && (
+              <label className="aa-form-label" htmlFor="agent-input">Agent Identifier</label>
+            )}
+            {searchForm}
+            {showHero && (
+              <p className="aa-kbd-hint">
+                <kbd className="aa-kbd">⌘K</kbd> to focus · <kbd className="aa-kbd">Esc</kbd> to clear
+              </p>
+            )}
           </div>
+          {!showHero && (
+            <button className="aa-new-search-btn" onClick={handleNewSearch} aria-label="Start new search">
+              New Search
+            </button>
+          )}
         </section>
 
         {/* ─── CONTENT AREA ─── */}
         <div className="aa-content">
-          {/* Loading */}
-          {loading && <LoadingState />}
+          {loading && <LoadingState steps={loadingSteps} />}
 
-          {/* Error */}
           {!loading && error && (
             <div className="aa-error-card" role="alert" aria-live="assertive">
               <svg
@@ -198,43 +291,52 @@ export default function Home() {
               <div>
                 <p className="aa-error-title">Analysis Failed</p>
                 <p className="aa-error-msg">{error}</p>
+                <button
+                  className="aa-retry-btn"
+                  onClick={() => lastSearchRef.current && runAudit(lastSearchRef.current.input, lastSearchRef.current.chain)}
+                  aria-label="Retry analysis"
+                >
+                  Try Again
+                </button>
               </div>
             </div>
           )}
 
-          {/* Results */}
           {!loading && result && (
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               <TrustScoreCard score={result.trustScore} />
-              <TransactionTable
-                transactions={result.transactions}
-                chainId={result.trustScore.chainId}
-              />
+              <div className="aa-reveal aa-delay-5 visible">
+                <TransactionTable
+                  transactions={result.transactions}
+                  chainId={result.trustScore.chainId}
+                  totalCount={result.totalTransactionCount}
+                />
+              </div>
             </div>
           )}
 
-          {/* Empty state */}
           {!hasContent && (
-            <div className="aa-empty-state" aria-label="No agent selected">
-              <svg
-                className="aa-empty-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.25"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 8v4M12 16h.01" />
-              </svg>
-              <p className="aa-empty-title">No agent selected</p>
-              <p className="aa-empty-body">
-                Enter an Agent ID, wallet address, or ENS name above to begin a forensic audit.
-              </p>
-            </div>
+            <AgentDirectory
+              agents={directoryAgents}
+              sortField={sortField}
+              onSortChange={setSortField}
+              onSelectAgent={handleSelectAudit}
+              lastSynced={lastSynced}
+              loading={directoryLoading}
+              error={directoryError}
+            />
           )}
         </div>
       </main>
     </div>
+  );
+}
+
+// Wrap in Suspense for useSearchParams
+export default function Page() {
+  return (
+    <Suspense>
+      <Home />
+    </Suspense>
   );
 }
