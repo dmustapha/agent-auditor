@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag } from "./types";
+import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag, ActivityProfile } from "./types";
 import { sanitizeForPrompt } from "./sanitize";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -133,6 +133,8 @@ Some values are pre-computed deterministically and provided in the prompt. DO NO
 - protocolsUsed: provided — use as-is, you may add protocols you detect from context
 - totalGasSpentETH: provided — use as-is
 
+Your behavioralNarrative MUST be specific to this agent's actual data. Never use generic phrases like "shows mostly normal behavior" or "minor anomalies detected". Instead describe: what the agent does, how often, which protocols, what strategy, and any notable patterns. Example: "This keeper bot executes Chainlink automation tasks every 4.2 hours with 98% consistency, primarily servicing price feed updates on Aave V3 and Compound V3 markets."
+
 You MUST respond ONLY with a JSON object in EXACTLY this structure (no markdown, no explanation, no extra fields):
 
 {
@@ -164,7 +166,14 @@ You MUST respond ONLY with a JSON object in EXACTLY this structure (no markdown,
   "protocolsUsed": ["Chainlink Automation", "Uniswap V3"],
   "funFact": "This agent has executed 1,247 upkeeps without a single failure.",
   "anomalies": ["Unusual 12-hour gap on March 15"],
-  "isLikelyHumanWallet": false
+  "isLikelyHumanWallet": false,
+  "activityProfile": {
+    "primaryActivity": "One sentence: what this agent does on-chain",
+    "strategies": ["Specific strategy 1", "Strategy 2"],
+    "protocolBreakdown": [{"protocol": "Protocol Name", "percentage": 65, "action": "What it does there"}],
+    "riskBehaviors": ["List any risky patterns observed"],
+    "successMetrics": "Concrete success metrics from the data"
+  }
 }
 
 The four breakdown values MUST sum to overallScore (±1 rounding). Each breakdown value is 0-25. overallScore is 0-100.`;
@@ -243,6 +252,26 @@ function normalizeVeniceResponse(
     ? [...new Set([...metrics.protocolsUsed, ...(raw.protocolsUsed as string[] ?? [])])]
     : (raw.protocolsUsed as string[] ?? []);
 
+  const activityProfile: ActivityProfile | undefined = raw.activityProfile
+    ? {
+        primaryActivity: (raw.activityProfile as Record<string, unknown>).primaryActivity as string || "Unknown activity",
+        strategies: Array.isArray((raw.activityProfile as Record<string, unknown>).strategies)
+          ? (raw.activityProfile as Record<string, unknown>).strategies as string[]
+          : [],
+        protocolBreakdown: Array.isArray((raw.activityProfile as Record<string, unknown>).protocolBreakdown)
+          ? ((raw.activityProfile as Record<string, unknown>).protocolBreakdown as Record<string, unknown>[]).map((p) => ({
+              protocol: (p.protocol as string) || "Unknown",
+              percentage: typeof p.percentage === "number" ? p.percentage : 0,
+              action: (p.action as string) || "Unknown",
+            }))
+          : [],
+        riskBehaviors: Array.isArray((raw.activityProfile as Record<string, unknown>).riskBehaviors)
+          ? (raw.activityProfile as Record<string, unknown>).riskBehaviors as string[]
+          : [],
+        successMetrics: (raw.activityProfile as Record<string, unknown>).successMetrics as string || "",
+      }
+    : undefined;
+
   const walletClass = metrics?.walletClassification;
   const humanWallet = walletClass
     ? (walletClass.humanScore > 70 && !walletClass.isDefinitelyContract)
@@ -280,6 +309,7 @@ function normalizeVeniceResponse(
     anomalies: (raw.anomalies as string[] | undefined) ?? [],
     isLikelyHumanWallet: humanWallet,
     walletClassification: walletClass,
+    activityProfile,
   };
 }
 
@@ -508,6 +538,13 @@ export function createMockTrustScore(
     funFact: `This mock agent has been analyzed ${txCount} transactions deep.`,
     anomalies: [],
     isLikelyHumanWallet: false,
+    activityProfile: {
+      primaryActivity: "Mock agent performing automated keeper operations",
+      strategies: ["Periodic execution", "Gas optimization"],
+      protocolBreakdown: [{ protocol: "Mock Protocol", percentage: 100, action: "Automated calls" }],
+      riskBehaviors: [],
+      successMetrics: "98% success rate over mock period",
+    },
     walletClassification: {
       isDefinitelyContract: false,
       isERC4337: false,

@@ -213,6 +213,20 @@ export interface DiscoveredAgent {
 
 // ─── Venice / Trust Score Types ──────────────────────────────────────────────
 
+export interface ProtocolShare {
+  readonly protocol: string;
+  readonly percentage: number;
+  readonly action: string;
+}
+
+export interface ActivityProfile {
+  readonly primaryActivity: string;
+  readonly strategies: readonly string[];
+  readonly protocolBreakdown: readonly ProtocolShare[];
+  readonly riskBehaviors: readonly string[];
+  readonly successMetrics: string;
+}
+
 export interface TrustScore {
   readonly agentAddress: string;
   readonly chainId: ChainId;
@@ -245,6 +259,7 @@ export interface TrustScore {
   readonly anomalies: readonly string[];
   readonly isLikelyHumanWallet: boolean;
   readonly walletClassification?: WalletClassification;
+  readonly activityProfile?: ActivityProfile;
 }
 
 export interface TrustFlag {
@@ -375,6 +390,7 @@ export interface UITrustScore {
   readonly anomalies: readonly string[];
   readonly isLikelyHumanWallet: boolean;
   readonly walletClassification?: WalletClassification;
+  readonly activityProfile?: ActivityProfile;
 }
 
 // ─── Sidebar / localStorage Types ───────────────────────────────────────────

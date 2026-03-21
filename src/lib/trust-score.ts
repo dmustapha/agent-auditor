@@ -138,5 +138,6 @@ export function formatForUI(score: TrustScore): UITrustScore {
     anomalies: score.anomalies,
     isLikelyHumanWallet: score.isLikelyHumanWallet,
     walletClassification: score.walletClassification,
+    activityProfile: score.activityProfile,
   };
 }
