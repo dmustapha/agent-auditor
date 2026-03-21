@@ -297,6 +297,11 @@ function Home() {
                 <kbd className="aa-kbd">⌘K</kbd> to focus · <kbd className="aa-kbd">Esc</kbd> to clear
               </p>
             )}
+            {!showHero && (
+              <span className="aa-kbd-hint-compact">
+                <kbd className="aa-kbd">⌘K</kbd>
+              </span>
+            )}
             {showHero && (
               <div className="aa-example-agents" aria-label="Example agents to try">
                 <span className="aa-example-label">Try an example:</span>

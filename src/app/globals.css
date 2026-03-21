@@ -458,6 +458,19 @@ body {
   margin-top: 0.75rem;
 }
 
+.aa-kbd-hint-compact {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 0.25rem;
+}
+
+.aa-kbd-hint-compact .aa-kbd {
+  font-size: 0.6rem;
+  padding: 0.0625rem 0.25rem;
+  opacity: 0.5;
+}
+
 .aa-kbd {
   display: inline-block;
   padding: 0.1rem 0.35rem;
