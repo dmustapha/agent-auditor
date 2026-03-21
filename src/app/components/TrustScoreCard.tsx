@@ -71,11 +71,6 @@ const FLAG_CARD_CLASS: Record<TrustFlag["severity"], string> = {
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-function truncateAddress(address: string): string {
-  if (address.length <= 14) return address;
-  return `${address.slice(0, 8)}...${address.slice(-6)}`;
-}
-
 function formatIntervalHours(hours: number): string {
   if (hours < 1) return `every ${Math.round(hours * 60)}m`;
   if (hours < 24) return `every ${hours % 1 === 0 ? hours : hours.toFixed(1)}h`;
@@ -398,7 +393,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined!);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const revealKey = `${score.address}-${score.score}`;
 
