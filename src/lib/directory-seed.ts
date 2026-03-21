@@ -384,6 +384,6 @@ export const AGENT_TYPE_COLORS: Record<string, string> = {
   BRIDGE_RELAYER: "#9070d4",
   LIQUIDATOR: "#eab308",
   MEV_BOT: "#ef4444",
-  DEX_TRADER: "#78716c",
+  DEX_TRADER: "#a8a29e",
   UNKNOWN: "#525252",
 };

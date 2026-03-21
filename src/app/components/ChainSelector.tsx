@@ -21,6 +21,8 @@ const CHAIN_OPTIONS: { value: ChainId | "all"; label: string }[] = [
 export function ChainSelector({ value, onChange, disabled }: ChainSelectorProps) {
   return (
     <select
+      id="chain-select"
+      name="chain"
       value={value}
       onChange={(e) => onChange(e.target.value as ChainId | "all")}
       disabled={disabled}

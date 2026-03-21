@@ -106,6 +106,7 @@ export function AgentDirectory({
         <span className="aa-directory-stat">{agents.length} agents indexed</span>
         <div style={{ flex: 1 }} />
         <select
+          id="directory-sort"
           className="aa-directory-sort"
           value={sortField}
           onChange={(e) => onSortChange(e.target.value as SortField)}

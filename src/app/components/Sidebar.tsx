@@ -76,14 +76,13 @@ export function Sidebar({ activeItem = "dashboard", recentAudits, onSelectAudit,
         </button>
       </nav>
 
-      <AgentEcosystem
-        agents={directoryAgents}
-        activeFilter={activeFilter}
-        onFilterChange={onFilterChange}
-      />
-
       {/* ─── Sidebar Panels ─── */}
       <div className="aa-sidebar-panels">
+        <AgentEcosystem
+          agents={directoryAgents}
+          activeFilter={activeFilter}
+          onFilterChange={onFilterChange}
+        />
         <ThreatFeed entries={threatEntries} error={threatError} />
         <RecentAudits
           records={recentAudits}
