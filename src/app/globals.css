@@ -627,38 +627,90 @@ body {
   white-space: nowrap;
 }
 
-.aa-chain-select {
+.aa-chain-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.aa-chain-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   background: #0f0f11;
   border: 1px solid #252529;
   border-radius: 8px;
-  padding: 0.75rem 2.25rem 0.75rem 1rem;
+  padding: 0.75rem 1rem;
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 0.8125rem;
   color: #f2f0eb;
-  outline: none;
   cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a5650' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.7rem center;
-  transition: border-color 150ms ease;
   white-space: nowrap;
+  transition: border-color 150ms ease;
+  outline: none;
 }
 
-.aa-chain-select:focus {
+.aa-chain-trigger:hover {
+  border-color: rgba(144, 112, 212, 0.35);
+}
+
+.aa-chain-trigger:focus-visible {
   border-color: rgba(144, 112, 212, 0.5);
   outline: 2px solid #9070d4;
   outline-offset: 2px;
 }
 
-.aa-chain-select:disabled {
+.aa-chain-trigger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.aa-chain-select option {
-  background: #16161a;
+.aa-chain-chevron {
+  color: #5a5650;
+  transition: transform 200ms ease;
+  flex-shrink: 0;
+}
+
+.aa-chain-trigger--open .aa-chain-chevron {
+  transform: rotate(180deg);
+}
+
+.aa-chain-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  background: #131316;
+  border: 1px solid #252529;
+  border-radius: 8px;
+  padding: 4px;
+  margin: 0;
+  list-style: none;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.aa-chain-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.8125rem;
+  color: #a09b93;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  user-select: none;
+}
+
+.aa-chain-option:hover,
+.aa-chain-option--focused {
+  background: rgba(144, 112, 212, 0.12);
+  color: #f2f0eb;
+}
+
+.aa-chain-option--active {
+  color: #f2f0eb;
 }
 
 .aa-audit-btn {
