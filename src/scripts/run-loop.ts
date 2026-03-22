@@ -1,7 +1,15 @@
+import { createServer } from "http";
 import { createTelegramBot } from "../bot/telegram";
 import { startLoop, getStatus } from "../lib/loop";
 
 async function main() {
+  // Health endpoint for Render web service
+  const port = parseInt(process.env.PORT ?? "10000");
+  createServer((_req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(getStatus()));
+  }).listen(port, () => console.log(`[health] Listening on :${port}`));
+
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
 
   let sendAlert: (msg: string) => Promise<void>;
