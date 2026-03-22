@@ -31,6 +31,14 @@ export async function POST(request: NextRequest) {
 
     // 1. Detect input type (or use provided)
     const inputType: InputType = body.inputType ?? detectInputType(input);
+
+    const VALID_CHAINS = new Set<ChainId | "all">(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "all"]);
+    if (chain && !VALID_CHAINS.has(chain as ChainId | "all")) {
+      return NextResponse.json(
+        { error: "invalid_input", message: "Invalid chain" } satisfies AnalyzeErrorResponse,
+        { status: 400 },
+      );
+    }
     const selectedChain: ChainId | "all" = chain ?? "all";
 
     // 2. Resolve input to address + chain

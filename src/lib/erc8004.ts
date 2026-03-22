@@ -254,20 +254,21 @@ export async function searchAgentsByName(
       const searchLimit = totalSupply < 50n ? totalSupply : 50n;
       const startId = totalSupply - searchLimit + 1n;
 
-      for (let id = startId; id <= totalSupply; id += 1n) {
-        try {
-          const name = await client.readContract({
+      const ids = Array.from({ length: Number(searchLimit) }, (_, i) => startId + BigInt(i));
+      const nameResults = await Promise.allSettled(
+        ids.map(id =>
+          client.readContract({
             address: config.erc8004.identityRegistry,
             abi: IDENTITY_REGISTRY_ABI,
             functionName: "getMetadata",
             args: [id, "name"],
-          }) as string;
-
-          if (name && name.toLowerCase().includes(queryLower)) {
-            results.push({ chainId, agentId: id, name });
-          }
-        } catch {
-          continue; // agent may not have name metadata
+          }) as Promise<string>
+        )
+      );
+      for (let i = 0; i < nameResults.length; i++) {
+        const result = nameResults[i];
+        if (result.status === "fulfilled" && result.value?.toLowerCase().includes(queryLower)) {
+          results.push({ chainId, agentId: ids[i], name: result.value });
         }
       }
     } catch {

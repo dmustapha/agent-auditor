@@ -66,7 +66,7 @@ export interface BlockscoutTokenTransfer {
 }
 
 export interface BlockscoutInternalTx {
-  readonly to: { readonly hash: string };
+  readonly to: { readonly hash: string } | null;
   readonly type: string;
   readonly timestamp: string;
 }

@@ -36,8 +36,18 @@ async function rateLimitedFetch(chainId: ChainId, url: string): Promise<Response
   lastRequestTime.set(chainId, Date.now());
 
   const res = await fetch(url);
+  if (res.status === 429) {
+    // Back off and retry once on rate limit
+    await new Promise((r) => setTimeout(r, RATE_LIMIT_DELAY_MS * 3));
+    lastRequestTime.set(chainId, Date.now());
+    const retry = await fetch(url);
+    if (!retry.ok) {
+      throw new Error(`Blockscout rate limited on ${chainId}. Try again shortly.`);
+    }
+    return retry;
+  }
   if (!res.ok) {
-    throw new Error(`Blockscout ${chainId} ${res.status}: ${url}`);
+    throw new Error(`Blockscout ${chainId} error (${res.status})`);
   }
   return res;
 }
@@ -105,7 +115,7 @@ export async function getInternalTransactions(
   const res = await rateLimitedFetch(chainId, url);
   const data: BlockscoutPaginatedResponse<BlockscoutInternalTx> = await res.json();
 
-  return (data.items ?? []).filter((t) => t.to !== null).map((t) => ({
+  return (data.items ?? []).filter((t): t is BlockscoutInternalTx & { to: { hash: string } } => t.to !== null).map((t) => ({
     contract: t.to.hash,
     method: t.type,
     timestamp: new Date(t.timestamp).getTime(),

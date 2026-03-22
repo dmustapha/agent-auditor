@@ -247,8 +247,11 @@ function normalizeVeniceResponse(
     };
   });
 
-  const recommendation = (raw.recommendation as string | undefined) ??
-    (score >= 70 ? "SAFE" : score >= 40 ? "CAUTION" : "BLOCKLIST");
+  const VALID_RECS = new Set(["SAFE", "CAUTION", "BLOCKLIST"]);
+  const rawRec = String(raw.recommendation ?? "").toUpperCase();
+  const recommendation = VALID_RECS.has(rawRec)
+    ? (rawRec as "SAFE" | "CAUTION" | "BLOCKLIST")
+    : (score >= 70 ? "SAFE" : score >= 40 ? "CAUTION" : "BLOCKLIST") as "SAFE" | "CAUTION" | "BLOCKLIST";
 
   const opPattern = raw.operationalPattern as Record<string, unknown> | undefined;
   const finSummary = raw.financialSummary as Record<string, string> | undefined;
@@ -446,10 +449,14 @@ function normalizeVeniceResponse(
     txFrequencyPerDay: metrics?.txFrequencyPerDay,
     balanceTrend: (() => {
       if (!coinBalanceHistory || coinBalanceHistory.length < 2) return "stable" as const;
-      const first = Number(coinBalanceHistory[0].value);
-      const last = Number(coinBalanceHistory[coinBalanceHistory.length - 1].value);
-      if (last > first * 1.1) return "accumulating" as const;
-      if (last < first * 0.9) return "depleting" as const;
+      try {
+        const first = BigInt(coinBalanceHistory[0].value || "0");
+        const last = BigInt(coinBalanceHistory[coinBalanceHistory.length - 1].value || "0");
+        if (first === 0n) return "stable" as const;
+        // 10% threshold using integer math: last > first * 11/10
+        if (last * 10n > first * 11n) return "accumulating" as const;
+        if (last * 10n < first * 9n) return "depleting" as const;
+      } catch { /* non-numeric balance */ }
       return "stable" as const;
     })(),
   };

@@ -96,7 +96,11 @@ export function createTelegramBot(token: string) {
 
       await ctx.reply(formatForTelegram(trustScore), { parse_mode: "Markdown" });
     } catch (err) {
-      await ctx.reply(`Error: ${err instanceof Error ? err.message : "Analysis failed"}`);
+      console.error("[telegram] audit error:", err);
+      const userMsg = err instanceof Error && err.message.includes("No transaction activity")
+        ? err.message
+        : "Analysis failed. Please try again in a moment.";
+      await ctx.reply(`Error: ${userMsg}`);
     }
   });
 

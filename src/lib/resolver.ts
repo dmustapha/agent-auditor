@@ -100,12 +100,8 @@ async function resolveAddress(
     };
   }
 
-  // Default to Base if no activity found anywhere
-  return {
-    address,
-    chainId: "base",
-    resolvedVia: "address",
-  };
+  // No activity found on any chain — throw instead of wasting a Venice call
+  throw new Error(`No transaction activity found for ${address.slice(0, 10)}... on any supported chain`);
 }
 
 async function resolveName(input: string): Promise<ResolvedInput> {
