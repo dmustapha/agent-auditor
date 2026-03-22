@@ -8,15 +8,36 @@ out/
 # Environment
 .env
 .env.local
+!**/.env.example
 
 # Foundry
 contracts/out/
 contracts/cache/
 contracts/lib/
 
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
 # Demo
 .demo-cache/
 
-# Misc
+# Local
 .DS_Store
-*.tsbuildinfo
+.vercel
+.claude/
+.superpowers/
+design-variations/
+screenshots/
+*.design-forge-state.json
+.deploy-state.json
+.pipeline-artifacts/
+
+# Process artifacts
+**/context/
+**/prompts/
+tasks/
+
+# Logs
+*.log

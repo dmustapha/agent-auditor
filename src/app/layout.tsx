@@ -1,16 +1,25 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond } from "next/font/google";
+import { VT323, Space_Mono } from "next/font/google";
 import "./globals.css";
 
-const cormorant = Cormorant_Garamond({
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
+const vt323 = VT323({
+  weight: "400",
   subsets: ["latin"],
   display: "swap",
-  variable: "--loaded-cormorant",
+  variable: "--font-vt323",
+});
+
+const spaceMono = Space_Mono({
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-space-mono",
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://agent-auditor.vercel.app"
+  ),
   title: "AgentAuditor — Trust Scores for AI Agents",
   description: "Autonomous trust evaluation for AI agents across EVM chains",
   icons: { icon: "/icon.svg" },
@@ -34,8 +43,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={cormorant.variable}>
+    <html lang="en" className={`${vt323.variable} ${spaceMono.variable}`}>
       <body className="bg-surface text-text-primary min-h-dvh antialiased">
+        <div className="aa-crt-overlay" aria-hidden="true" />
         {children}
       </body>
     </html>

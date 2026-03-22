@@ -1,0 +1,5 @@
+[install]
+auto-install = true
+
+[resolve]
+tsconfig = "./tsconfig.json"

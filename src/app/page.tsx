@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "./components/Sidebar";
 import { SmartInput, detectInputType } from "./components/SmartInput";
 import { ChainSelector } from "./components/ChainSelector";
@@ -13,6 +14,7 @@ import { AgentGate } from "./components/AgentGate";
 import { useRecentAudits } from "@/hooks/useRecentAudits";
 import { useDirectory } from "@/hooks/useDirectory";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { LandingPage } from "./components/LandingPage";
 import { formatForUI } from "@/lib/trust-score";
 import type {
   ChainId,
@@ -43,6 +45,17 @@ const EXAMPLE_AGENTS = [
   { label: "Aave Liquidator (Base)", address: "0x80D4e3d92B4AA394b1B58cB568a6e2DE0FE2698E", chain: "base" as ChainId },
 ];
 
+const LOADING_STEPS = [
+  "Initializing trust engine...",
+  "Connecting to EVM networks...",
+  "Loading agent registry...",
+  "Calibrating AI models...",
+  "Dashboard ready.",
+] as const;
+
+const STEP_INTERVAL = 380;
+const LOADING_DURATION = LOADING_STEPS.length * STEP_INTERVAL + 300;
+
 function HeroStatCounter({ end, suffix = "", format }: { end: number; suffix?: string; format?: (v: number) => string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const counted = useRef(false);
@@ -70,7 +83,75 @@ function HeroStatCounter({ end, suffix = "", format }: { end: number; suffix?: s
   return <span ref={ref} className="aa-stat-num">0</span>;
 }
 
+function TransitionLoadingScreen({ onComplete }: { onComplete: () => void }) {
+  const [activeStep, setActiveStep] = useState(0);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    LOADING_STEPS.forEach((_, i) => {
+      timersRef.current.push(
+        setTimeout(() => setActiveStep(i), i * STEP_INTERVAL),
+      );
+    });
+
+    timersRef.current.push(
+      setTimeout(onComplete, LOADING_DURATION),
+    );
+
+    return () => timersRef.current.forEach(clearTimeout);
+  }, [onComplete]);
+
+  const progressPercent = Math.min(
+    ((activeStep + 1) / LOADING_STEPS.length) * 100,
+    100,
+  );
+
+  return (
+    <motion.div
+      className="aa-loading-screen"
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4 }}
+    >
+      <div className="aa-loading-brand">AgentAuditor</div>
+      <div className="aa-loading-steps">
+        {LOADING_STEPS.map((text, i) => {
+          const state =
+            i < activeStep ? "done" : i === activeStep ? "active" : "";
+          return (
+            <div
+              key={i}
+              className={`aa-loading-screen-step ${state}`}
+            >
+              {text}
+            </div>
+          );
+        })}
+      </div>
+      <div className="aa-loading-bar-wrap">
+        <div
+          className="aa-loading-bar-fill"
+          style={{ width: `${progressPercent}%`, transition: "width 0.4s cubic-bezier(0.22,1,0.36,1)" }}
+        />
+      </div>
+    </motion.div>
+  );
+}
+
+const sidebarItemVariants = {
+  hidden: { opacity: 0, x: -8 },
+  visible: { opacity: 1, x: 0 },
+};
+
+const sidebarContainerVariants = {
+  hidden: {},
+  visible: {
+    transition: { staggerChildren: 0.05, delayChildren: 0.15 },
+  },
+};
+
 function Home() {
+  const [view, setView] = useState<"landing" | "loading" | "dashboard">("landing");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -242,6 +323,15 @@ function Home() {
     setTimeout(() => inputRef.current?.focus(), 100);
   }, [router]);
 
+  const handleLaunch = useCallback(() => {
+    setView("loading");
+  }, []);
+
+  const handleLoadingComplete = useCallback(() => {
+    setView("dashboard");
+    setTimeout(() => inputRef.current?.focus(), 400);
+  }, []);
+
   // URL params: auto-populate and run on mount
   useEffect(() => {
     if (initializedRef.current) return;
@@ -251,6 +341,7 @@ function Home() {
     const chain = searchParams.get("chain");
 
     if (address) {
+      setView("dashboard");
       setInputValue(address);
       const validChain = chain && VALID_CHAINS.has(chain) ? (chain as ChainId | "all") : "all";
       setSelectedChain(validChain);
@@ -320,164 +411,198 @@ function Home() {
   );
 
   return (
-    <div className="aa-shell">
-      <Sidebar
-        activeItem="dashboard"
-        recentAudits={recentAudits}
-        onSelectAudit={handleSelectAudit}
-        directoryAgents={allAgents}
-        activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
-      />
-
-      <main className="aa-main" id="main-content">
-        {/* ─── HERO (always rendered, collapses via CSS class) ─── */}
-        <section
-          className={`aa-hero${showHero ? '' : ' aa-hero--collapsed'}`}
-          aria-label="Agent Auditor — forensic trust analysis"
+    <AnimatePresence mode="wait">
+      {view === "landing" && (
+        <motion.div
+          key="landing"
+          initial={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
         >
-          <p className="aa-hero-kicker">Forensic Trust Analysis</p>
-          <h1 className="aa-hero-title">
-            Know every agent<br />
-            <em>before you trust it.</em>
-          </h1>
-          <p className="aa-hero-subtitle">
-            Real-time onchain trust scoring across EVM chains. Transaction patterns, fund flows, contract interactions — distilled into one authoritative score.
-          </p>
+          <LandingPage onLaunch={handleLaunch} agentCount={agentCount} />
+        </motion.div>
+      )}
 
-          <div className="aa-hero-stats" aria-label="Platform statistics">
-            <div>
-              <HeroStatCounter key={agentCount} end={agentCount} />
-              <span className="aa-stat-label">Agents Indexed</span>
-            </div>
-            <div>
-              <HeroStatCounter end={7} />
-              <span className="aa-stat-label">EVM Chains</span>
-            </div>
-            <div>
-              <span className="aa-stat-num">Live</span>
-              <span className="aa-stat-label">Analysis</span>
-            </div>
-          </div>
+      {view === "loading" && (
+        <TransitionLoadingScreen
+          key="loading"
+          onComplete={handleLoadingComplete}
+        />
+      )}
 
-          <div className="aa-form-container" role="search" aria-label="Agent lookup form">
-            {showHero && (
-              <label className="aa-form-label" htmlFor="agent-input">Agent Identifier</label>
-            )}
-            {searchForm}
-            {showHero && (
-              <p className="aa-kbd-hint">
-                <kbd className="aa-kbd">⌘K</kbd> to focus · <kbd className="aa-kbd">Esc</kbd> to clear
+      {view === "dashboard" && (
+        <motion.div
+          key="dashboard"
+          className="aa-shell"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <motion.div
+            variants={sidebarContainerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            <Sidebar
+              activeItem="dashboard"
+              recentAudits={recentAudits}
+              onSelectAudit={handleSelectAudit}
+              directoryAgents={allAgents}
+              activeFilter={activeFilter}
+              onFilterChange={setActiveFilter}
+            />
+          </motion.div>
+
+          <main className="aa-main" id="main-content">
+            {/* ─── HERO (always rendered, collapses via CSS class) ─── */}
+            <section
+              className={`aa-hero${showHero ? '' : ' aa-hero--collapsed'}`}
+              aria-label="Agent Auditor — forensic trust analysis"
+            >
+              <p className="aa-hero-kicker">Forensic Trust Analysis</p>
+              <h1 className="aa-hero-title">
+                Know every agent<br />
+                <em>before you trust it.</em>
+              </h1>
+              <p className="aa-hero-subtitle">
+                Real-time onchain trust scoring across EVM chains. Transaction patterns, fund flows, contract interactions — distilled into one authoritative score.
               </p>
-            )}
-            {!showHero && (
-              <span className="aa-kbd-hint-compact">
-                <kbd className="aa-kbd">⌘K</kbd>
-              </span>
-            )}
-            {showHero && (
-              <div className="aa-example-agents" aria-label="Example agents to try">
-                <span className="aa-example-label">Try an example:</span>
-                {EXAMPLE_AGENTS.map((ex) => (
-                  <button
-                    key={ex.address}
-                    className="aa-example-btn"
-                    onClick={() => {
-                      setInputValue(ex.address);
-                      setSelectedChain(ex.chain);
-                      runAudit(ex.address, ex.chain);
-                    }}
-                  >
-                    {ex.label}
-                  </button>
-                ))}
+
+              <div className="aa-hero-stats" aria-label="Platform statistics">
+                <div>
+                  <HeroStatCounter key={agentCount} end={agentCount} />
+                  <span className="aa-stat-label">Agents Indexed</span>
+                </div>
+                <div>
+                  <HeroStatCounter end={7} />
+                  <span className="aa-stat-label">EVM Chains</span>
+                </div>
+                <div>
+                  <span className="aa-stat-num">Live</span>
+                  <span className="aa-stat-label">Analysis</span>
+                </div>
               </div>
-            )}
-          </div>
-          {!showHero && (
-            <button className="aa-new-search-btn" onClick={handleNewSearch} aria-label="Start new search">
-              New Search
-            </button>
-          )}
-        </section>
 
-        {/* ─── CONTENT AREA ─── */}
-        <div className="aa-content">
-          {loading && <LoadingState steps={loadingSteps} />}
-
-          {!loading && error && (
-            <div className="aa-error-card" role="alert" aria-live="assertive">
-              <svg
-                className="aa-error-icon"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <div>
-                <p className="aa-error-title">Analysis Failed</p>
-                <p className="aa-error-msg">{error}</p>
-                <button
-                  className="aa-retry-btn"
-                  onClick={() => lastSearchRef.current && runAudit(lastSearchRef.current.input, lastSearchRef.current.chain)}
-                  aria-label="Retry analysis"
-                >
-                  Try Again
+              <div className="aa-form-container" role="search" aria-label="Agent lookup form">
+                {showHero && (
+                  <label className="aa-form-label" htmlFor="agent-input">Agent Identifier</label>
+                )}
+                {searchForm}
+                {showHero && (
+                  <p className="aa-kbd-hint">
+                    <kbd className="aa-kbd">⌘K</kbd> to focus · <kbd className="aa-kbd">Esc</kbd> to clear
+                  </p>
+                )}
+                {!showHero && (
+                  <span className="aa-kbd-hint-compact">
+                    <kbd className="aa-kbd">⌘K</kbd>
+                  </span>
+                )}
+                {showHero && (
+                  <div className="aa-example-agents" aria-label="Example agents to try">
+                    <span className="aa-example-label">Try an example:</span>
+                    {EXAMPLE_AGENTS.map((ex) => (
+                      <button
+                        key={ex.address}
+                        className="aa-example-btn"
+                        onClick={() => {
+                          setInputValue(ex.address);
+                          setSelectedChain(ex.chain);
+                          runAudit(ex.address, ex.chain);
+                        }}
+                      >
+                        {ex.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {!showHero && (
+                <button className="aa-new-search-btn" onClick={handleNewSearch} aria-label="Start new search">
+                  New Search
                 </button>
-              </div>
-            </div>
-          )}
+              )}
+            </section>
 
-          {!loading && shouldGate && walletClassification && (
-            <AgentGate
-              classification={walletClassification}
-              onAnalyzeAnyway={() => setForceAnalysis(true)}
-              onTryExample={() => {
-                setForceAnalysis(false);
-                setResult(null);
-                setWalletClassification(null);
-                setHasAgentIdentity(false);
-                window.scrollTo({ top: 0, behavior: "smooth" });
-                setTimeout(() => inputRef.current?.focus(), 100);
-              }}
-            />
-          )}
+            {/* ─── CONTENT AREA ─── */}
+            <div className="aa-content">
+              {loading && <LoadingState steps={loadingSteps} />}
 
-          {!loading && result && !shouldGate && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              <TrustScoreCard score={result.trustScore} badge={deriveBadge(walletClassification, hasAgentIdentity)} attestationTxHash={attestationTxHash} chainResults={chainResults} />
-              <div className="aa-reveal aa-delay-5 visible">
-                <TransactionTable
-                  transactions={result.transactions}
-                  chainId={result.trustScore.chainId}
-                  totalCount={result.totalTransactionCount}
-                  agentAddress={result.trustScore.address}
+              {!loading && error && (
+                <div className="aa-error-card" role="alert" aria-live="assertive">
+                  <svg
+                    className="aa-error-icon"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <div>
+                    <p className="aa-error-title">Analysis Failed</p>
+                    <p className="aa-error-msg">{error}</p>
+                    <button
+                      className="aa-retry-btn"
+                      onClick={() => lastSearchRef.current && runAudit(lastSearchRef.current.input, lastSearchRef.current.chain)}
+                      aria-label="Retry analysis"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!loading && shouldGate && walletClassification && (
+                <AgentGate
+                  classification={walletClassification}
+                  onAnalyzeAnyway={() => setForceAnalysis(true)}
+                  onTryExample={() => {
+                    setForceAnalysis(false);
+                    setResult(null);
+                    setWalletClassification(null);
+                    setHasAgentIdentity(false);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                    setTimeout(() => inputRef.current?.focus(), 100);
+                  }}
                 />
-              </div>
-            </div>
-          )}
+              )}
 
-          {!hasContent && (
-            <AgentDirectory
-              agents={directoryAgents}
-              sortField={sortField}
-              onSortChange={setSortField}
-              onSelectAgent={handleSelectAudit}
-              lastSynced={lastSynced}
-              loading={directoryLoading}
-              error={directoryError}
-            />
-          )}
-        </div>
-      </main>
-    </div>
+              {!loading && result && !shouldGate && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                  <TrustScoreCard score={result.trustScore} badge={deriveBadge(walletClassification, hasAgentIdentity)} attestationTxHash={attestationTxHash} chainResults={chainResults} />
+                  <div className="aa-reveal aa-delay-5 visible">
+                    <TransactionTable
+                      transactions={result.transactions}
+                      chainId={result.trustScore.chainId}
+                      totalCount={result.totalTransactionCount}
+                      agentAddress={result.trustScore.address}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {!hasContent && (
+                <AgentDirectory
+                  agents={directoryAgents}
+                  sortField={sortField}
+                  onSortChange={setSortField}
+                  onSelectAgent={handleSelectAudit}
+                  lastSynced={lastSynced}
+                  loading={directoryLoading}
+                  error={directoryError}
+                />
+              )}
+            </div>
+          </main>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
