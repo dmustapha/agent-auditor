@@ -1,5 +1,5 @@
 import { toHex } from "viem";
-import type { TrustScore, TrustFlag, UITrustScore } from "./types";
+import type { TrustScore, TrustFlag, UITrustScore, BehavioralProfile } from "./types";
 import { getChainConfig } from "./chains";
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -28,7 +28,15 @@ export function validateTrustScore(raw: unknown): TrustScore {
     throw new Error(`Invalid recommendation: ${score.recommendation}`);
   }
 
-  return score as unknown as TrustScore;
+  // Auto-correct recommendation if inconsistent with score + flags
+  const validated = score as unknown as TrustScore;
+  const expectedRec = scoreToRecommendation(validated.overallScore, validated.flags ?? []);
+  if (validated.recommendation !== expectedRec) {
+    console.warn(`[validateTrustScore] Correcting recommendation: ${validated.recommendation} → ${expectedRec} (score=${validated.overallScore})`);
+    return { ...validated, recommendation: expectedRec } as TrustScore;
+  }
+
+  return validated;
 }
 
 // ─── Recommendation Logic ────────────────────────────────────────────────────
@@ -99,13 +107,14 @@ const TREND_ICON = { accumulating: "↗", depleting: "↘", stable: "→" } as c
 
 // ─── Format for Telegram ─────────────────────────────────────────────────────
 
-export function formatForTelegram(score: TrustScore): string {
+export function formatForTelegram(score: TrustScore, ensName?: string | null): string {
   const emoji = score.recommendation === "SAFE" ? "✅" :
     score.recommendation === "CAUTION" ? "⚠️" : "🚫";
 
   const chainConfig = getChainConfig(score.chainId);
   const addr = score.agentAddress;
   const shortAddr = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  const displayName = ensName ? `${ensName} (${shortAddr})` : shortAddr;
 
   // ── Identity ──
   const age = score.firstSeenTimestamp && score.lastSeenTimestamp
@@ -195,7 +204,7 @@ export function formatForTelegram(score: TrustScore): string {
 
   return `${emoji} *AgentAuditor Intelligence Report*
 
-*${shortAddr}*${typeBadge} on *${chainConfig.name}*
+*${displayName}*${typeBadge} on *${chainConfig.name}*
 ${identityParts.length > 0 ? identityParts.join(" | ") : ""}
 
 *TRUST SCORE: ${score.overallScore}/100 — ${score.recommendation}*
@@ -210,7 +219,13 @@ ${score.behavioralNarrative ? `_${score.behavioralNarrative}_` : ""}`;
 
 // ─── Format for UI ───────────────────────────────────────────────────────────
 
-export function formatForUI(score: TrustScore, successRate?: number, ethPrice?: number): UITrustScore {
+export function formatForUI(score: TrustScore, opts?: {
+  successRate?: number;
+  ethPrice?: number;
+  behavioralProfile?: BehavioralProfile;
+  ensName?: string | null;
+}): UITrustScore {
+  const { successRate, ethPrice, behavioralProfile, ensName } = opts ?? {};
   const chainConfig = getChainConfig(score.chainId);
 
   const recommendationColors: Record<string, string> = {
@@ -221,6 +236,7 @@ export function formatForUI(score: TrustScore, successRate?: number, ethPrice?: 
 
   return {
     address: score.agentAddress,
+    ensName,
     chainId: score.chainId,
     chainName: chainConfig.name,
     score: score.overallScore,
@@ -258,5 +274,6 @@ export function formatForUI(score: TrustScore, successRate?: number, ethPrice?: 
     uniqueCounterparties: score.uniqueCounterparties,
     txFrequencyPerDay: score.txFrequencyPerDay,
     balanceTrend: score.balanceTrend,
+    behavioralProfile,
   };
 }

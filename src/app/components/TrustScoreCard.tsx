@@ -6,9 +6,31 @@ import { ActivityProfile } from "./ActivityProfile";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const CHAIN_EXPLORER: Record<string, string> = {
+  ethereum: "https://eth.blockscout.com",
+  base: "https://base.blockscout.com",
+  gnosis: "https://gnosis.blockscout.com",
+  arbitrum: "https://arbitrum.blockscout.com",
+  optimism: "https://optimism.blockscout.com",
+  polygon: "https://polygon.blockscout.com",
+};
+
+function formatTimestamp(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+      hour: "numeric", minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 interface TrustScoreCardProps {
   score: UITrustScore;
   badge?: "verified" | "detected" | "unclassified" | null;
+  attestationTxHash?: string | null;
+  chainResults?: readonly { chainId: string; txCount: number }[];
 }
 
 type Recommendation = "SAFE" | "CAUTION" | "BLOCKLIST";
@@ -440,7 +462,7 @@ function BreakdownBar({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
+export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }: TrustScoreCardProps) {
   const circumference = 2 * Math.PI * 60;
   const recommendation = score.recommendation as Recommendation;
   const strokeColor = RECOMMENDATION_COLOR[recommendation] ?? score.recommendationColor;
@@ -514,7 +536,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
   const netSign = netFlowSign(score.financialSummary.netFlowETH);
 
   return (
-    <div ref={cardRef} aria-label={`Trust score card for ${score.address}`}>
+    <div ref={cardRef} aria-label={`Trust score card for ${score.ensName ?? score.address}`}>
 
       {/* ── Identity Header ── */}
       <div className={`aa-agent-header aa-reveal${r}`}>
@@ -536,7 +558,12 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
               {typeMeta.label}
             </h2>
 
-            {/* Line 2: Address + chain */}
+            {/* Line 2: ENS name (if available) + Address + chain */}
+            {score.ensName && (
+              <div style={{ fontFamily: "var(--font-display)", fontSize: "1rem", color: "var(--color-text)", marginTop: "0.15rem", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+                {score.ensName}
+              </div>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem" }}>
               <button
                 className="aa-copy-btn"
@@ -678,6 +705,16 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
                 Unclassified
               </span>
             )}
+            {attestationTxHash && (
+              <a
+                href={`${CHAIN_EXPLORER[score.chainId] ?? CHAIN_EXPLORER.ethereum}/tx/${attestationTxHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: "0.75rem", color: "var(--color-accent)", textDecoration: "underline", marginTop: "0.5rem", display: "inline-block" }}
+              >
+                Onchain attestation ↗
+              </a>
+            )}
           </div>
         </div>
 
@@ -692,6 +729,20 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
             </span>
           </div>
         </div>
+
+        {chainResults && chainResults.length > 1 && (
+          <div style={{ marginTop: "1rem", padding: "0.75rem", background: "var(--color-surface-2)", borderRadius: "0.5rem" }}>
+            <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
+              Active on {chainResults.length} chains
+            </div>
+            {chainResults.map(c => (
+              <div key={c.chainId} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", padding: "0.15rem 0" }}>
+                <span style={{ textTransform: "capitalize" }}>{c.chainId}</span>
+                <span style={{ color: "var(--color-text-muted)" }}>{c.txCount.toLocaleString()} txs</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Score Ring + Left Content ── */}
@@ -700,7 +751,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
           <p className="aa-score-eyebrow">Trust Score</p>
           <p className="aa-score-report-title">Forensic Analysis Report</p>
           <p className="aa-score-meta">
-            {score.chainName} · {new Date(score.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            {score.chainName} · {formatTimestamp(score.timestamp)}
           </p>
         </div>
 
@@ -758,7 +809,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
             </div>
           </div>
           <p className="aa-score-timestamp">
-            {new Date(score.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+            {formatTimestamp(score.timestamp)}
           </p>
         </div>
       </div>
@@ -767,7 +818,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
       <div className={`aa-summary-block aa-reveal aa-delay-2${r}`} aria-label="Analysis summary">
         <p className="aa-summary-label">Analysis Summary</p>
         <p className="aa-summary-text">{score.summary}</p>
-        <p className="aa-timestamp">Analyzed {new Date(score.timestamp).toLocaleString()}</p>
+        <p className="aa-timestamp">Analyzed {formatTimestamp(score.timestamp)}</p>
       </div>
 
       {/* ── Activity Profile / Behavioral Narrative ── */}
@@ -1087,6 +1138,91 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Life Events ── */}
+      {score.behavioralProfile?.lifeEvents && score.behavioralProfile.lifeEvents.length > 0 && (
+        <div className="aa-card aa-life-events" aria-label="Life events timeline">
+          <p className="aa-section-heading">Life Events</p>
+          <div className="aa-timeline">
+            {score.behavioralProfile.lifeEvents.map((event, i) => (
+              <div key={i} className={`aa-timeline-item aa-event-${event.type}`}>
+                <span className="aa-event-date">{event.date}</span>
+                <span className="aa-event-desc">{event.description}</span>
+                {event.value && <span className="aa-event-value">{event.value}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Activity Breakdown ── */}
+      {score.behavioralProfile?.activityBreakdown && score.behavioralProfile.activityBreakdown.length > 0 && (
+        <div className="aa-card aa-activity-breakdown" aria-label="Activity breakdown">
+          <p className="aa-section-heading">Activity Breakdown</p>
+          {score.behavioralProfile.activityBreakdown.map((cat, i) => (
+            <div key={i} className="aa-activity-bar">
+              <div className="aa-activity-label">
+                <span>{cat.category.replace(/_/g, " ")}</span>
+                <span>{cat.percentage}% ({cat.txCount} txs)</span>
+              </div>
+              <div className="aa-bar-track">
+                <div className="aa-bar-fill" style={{ width: `${cat.percentage}%` }} />
+              </div>
+              {cat.protocols.length > 0 && (
+                <span className="aa-activity-protocols">{cat.protocols.join(", ")}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Top Counterparties ── */}
+      {score.behavioralProfile?.topCounterparties && score.behavioralProfile.topCounterparties.length > 0 && (
+        <div className="aa-card aa-top-counterparties" aria-label="Top counterparties">
+          <p className="aa-section-heading">Top Counterparties</p>
+          {score.behavioralProfile.topCounterparties.map((cp, i) => (
+            <div key={i} className="aa-counterparty-row">
+              <span className="aa-cp-rank">#{i + 1}</span>
+              <span className="aa-cp-name">{cp.name ?? `${cp.address.slice(0, 10)}...`}</span>
+              <span className="aa-cp-stats">{cp.txCount} txs · {cp.volumeETH} ETH</span>
+              <span className={`aa-cp-direction aa-dir-${cp.direction}`}>
+                {cp.direction.replace(/_/g, " ")}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Token Flow & Timezone ── */}
+      {score.behavioralProfile && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+          {score.behavioralProfile.tokenFlowSummary.uniqueTokens > 0 && (
+            <div className="aa-card" aria-label="Token flow summary">
+              <p className="aa-section-heading">Token Flow</p>
+              <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                {score.behavioralProfile.tokenFlowSummary.dominantToken && (
+                  <span>Dominant: <strong>{score.behavioralProfile.tokenFlowSummary.dominantToken.symbol}</strong> ({score.behavioralProfile.tokenFlowSummary.dominantToken.txCount} txs)</span>
+                )}
+                <span>Unique tokens: {score.behavioralProfile.tokenFlowSummary.uniqueTokens}</span>
+                <span>Net direction: {score.behavioralProfile.tokenFlowSummary.netDirection}</span>
+                {score.behavioralProfile.tokenFlowSummary.topTokens.length > 1 && (
+                  <span>Top: {score.behavioralProfile.tokenFlowSummary.topTokens.slice(0, 3).map(t => t.symbol).join(", ")}</span>
+                )}
+              </div>
+            </div>
+          )}
+          {score.behavioralProfile.timezoneFingerprint.peakWindowUTC !== "N/A" && (
+            <div className="aa-card" aria-label="Timezone fingerprint">
+              <p className="aa-section-heading">Timezone Fingerprint</p>
+              <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                <span>Peak: <strong>{score.behavioralProfile.timezoneFingerprint.peakWindowUTC}</strong> UTC</span>
+                <span>Dead zone: {score.behavioralProfile.timezoneFingerprint.deadZoneUTC} UTC</span>
+                <span>{score.behavioralProfile.timezoneFingerprint.is24x7 ? "24/7 bot operation" : score.behavioralProfile.timezoneFingerprint.inference}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

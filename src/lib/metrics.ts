@@ -1,5 +1,5 @@
 import type { AgentMetrics, AgentTransactionData } from "./types";
-import { classifyAgentType, detectERC4337, inferProtocols, computeWalletClassification } from "./agent-classifier";
+import { classifyAgentType, detectERC4337, inferProtocols, computeWalletClassification, computeConsistencyScore } from "./agent-classifier";
 
 export function computeMetrics(data: Pick<AgentTransactionData, "address" | "chainId" | "transactions" | "tokenTransfers" | "contractCalls" | "coinBalanceHistory" | "addressInfo">): AgentMetrics {
   const { address, transactions } = data;
@@ -119,5 +119,6 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
     netFlowETH,
     protocolsUsed: inferProtocols(transactions),
     walletClassification: computeWalletClassification(transactions, data.addressInfo),
+    consistencyScore: computeConsistencyScore(transactions),
   };
 }

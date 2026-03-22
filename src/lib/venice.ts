@@ -3,6 +3,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag, ActivityProfile } from "./types";
 import { sanitizeForPrompt } from "./sanitize";
 import { METHOD_REGISTRY } from "./agent-classifier";
+import { computeBreakdown } from "./breakdown";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -186,7 +187,23 @@ CRITICAL INSTRUCTIONS FOR activityProfile:
 
 DO NOT return "Unknown" or empty values for any activityProfile field. If data is limited, describe what you CAN observe.
 
-The four breakdown values MUST sum to overallScore (±1 rounding). Each breakdown value is 0-25. overallScore is 0-100.`;
+The four breakdown values MUST sum to overallScore (±1 rounding). Each breakdown value is 0-25. overallScore is 0-100.
+
+NOTE: Breakdown scores are pre-computed locally from metrics — your breakdown values will be overridden. Focus on providing accurate overallScore, flags, narrative, and activityProfile.
+
+BEHAVIORAL PROFILE INTEGRATION:
+You will receive pre-computed behavioral data in ground truth sections. Your job is to NARRATE these facts, not compute your own:
+- Use LIFE STORY EVENTS to build a chronological narrative in behavioralNarrative
+- Use ACTIVITY BREAKDOWN percentages exactly in activityProfile.protocolBreakdown
+- Use TOP COUNTERPARTY resolved names (not raw addresses) in your narrative
+- Mention the TIMEZONE FINGERPRINT in your analysis
+- Reference FAILED TX ANALYSIS when discussing risk
+- Use TOKEN FLOW SUMMARY to describe what tokens the agent handles
+- Use BALANCE STORY to describe the financial trajectory
+- Weave the AGENT BIOGRAPHY facts (wallet age, first action, busiest day, dormancy) into a compelling narrative
+
+Your funFact MUST reference a specific data point from the life events, not a generic observation.
+Your behavioralNarrative should read like a biography: when it started, what it does, key moments, current state.`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -205,24 +222,29 @@ function normalizeVeniceResponse(
   // Handle alternate field names Venice models sometimes use
   const score = (raw.overallScore ?? raw.trustScore ?? raw.score ?? 50) as number;
 
-  const breakdown = { ...(raw.breakdown as Record<string, number> | undefined) ?? {
-    transactionPatterns: Math.round(score * 0.25),
-    contractInteractions: Math.round(score * 0.28),
-    fundFlow: Math.round(score * 0.22),
-    behavioralConsistency: 0,
-  } };
-  // Ensure breakdown sums to score — scale down if Venice returned inflated values
-  let partial = (breakdown.transactionPatterns ?? 0) +
-    (breakdown.contractInteractions ?? 0) +
-    (breakdown.fundFlow ?? 0);
-  if (partial > score) {
-    const scale = score / partial;
-    breakdown.transactionPatterns = Math.round((breakdown.transactionPatterns ?? 0) * scale);
-    breakdown.contractInteractions = Math.round((breakdown.contractInteractions ?? 0) * scale);
-    breakdown.fundFlow = Math.round((breakdown.fundFlow ?? 0) * scale);
-    partial = breakdown.transactionPatterns + breakdown.contractInteractions + breakdown.fundFlow;
-  }
-  breakdown.behavioralConsistency = Math.max(0, Math.min(25, score - partial));
+  // Use locally computed breakdown when metrics are available (deterministic, data-driven)
+  const breakdown = metrics
+    ? computeBreakdown(metrics, score)
+    : (() => {
+        const veniceBreakdown = { ...(raw.breakdown as Record<string, number> | undefined) ?? {
+          transactionPatterns: Math.round(score * 0.25),
+          contractInteractions: Math.round(score * 0.28),
+          fundFlow: Math.round(score * 0.22),
+          behavioralConsistency: 0,
+        } };
+        let partial = (veniceBreakdown.transactionPatterns ?? 0) +
+          (veniceBreakdown.contractInteractions ?? 0) +
+          (veniceBreakdown.fundFlow ?? 0);
+        if (partial > score) {
+          const scale = score / partial;
+          veniceBreakdown.transactionPatterns = Math.round((veniceBreakdown.transactionPatterns ?? 0) * scale);
+          veniceBreakdown.contractInteractions = Math.round((veniceBreakdown.contractInteractions ?? 0) * scale);
+          veniceBreakdown.fundFlow = Math.round((veniceBreakdown.fundFlow ?? 0) * scale);
+          partial = veniceBreakdown.transactionPatterns + veniceBreakdown.contractInteractions + veniceBreakdown.fundFlow;
+        }
+        veniceBreakdown.behavioralConsistency = Math.max(0, Math.min(25, score - partial));
+        return veniceBreakdown;
+      })();
 
   // Normalize flags — may be string[] or object[]
   const VALID_SEVERITIES = new Set(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
@@ -258,7 +280,7 @@ function normalizeVeniceResponse(
 
   // Override Venice fabrications with locally computed ground truth
   const computedFinancials = metrics ? {
-    totalGasSpentETH: (Number(metrics.totalGasSpentWei) / 1e18).toFixed(6),
+    totalGasSpentETH: (Number(BigInt(metrics.totalGasSpentWei)) / 1e18).toFixed(6),
     netFlowETH: metrics.netFlowETH,
     largestSingleTxETH: (Number(BigInt(metrics.largestSingleTxWei)) / 1e18).toFixed(6),
   } : undefined;
@@ -388,7 +410,7 @@ function normalizeVeniceResponse(
   const lowerNarrative = rawNarrative.toLowerCase();
   const isGenericNarrative = !rawNarrative || rawNarrative.length < 40 || GENERIC_NARRATIVE_PHRASES.some(p => lowerNarrative.includes(p));
   const behavioralNarrative = isGenericNarrative && metrics
-    ? `This ${resolvedType} has processed ${metrics.protocolsUsed.length > 0 ? metrics.protocolsUsed.join(", ") + " " : ""}transactions with a ${(metrics.successRate * 100).toFixed(1)}% success rate. Net flow: ${metrics.netFlowETH} ETH across ${metrics.uniqueCounterparties} counterparties.`
+    ? `This ${resolvedType} has processed ${metrics.protocolsUsed.length > 0 ? "transactions across " + metrics.protocolsUsed.join(", ") : "transactions"} with a ${(metrics.successRate * 100).toFixed(1)}% success rate. Net flow: ${metrics.netFlowETH} ETH across ${metrics.uniqueCounterparties} counterparties.`
     : (rawNarrative || "Behavioral analysis not available.");
 
   return {
@@ -420,7 +442,7 @@ function normalizeVeniceResponse(
     operationalPattern: metrics ? {
       avgIntervalHours: metrics.txFrequencyPerDay > 0 ? +(24 / metrics.txFrequencyPerDay).toFixed(1) : 0,
       peakHoursUTC: peakHourIndices ?? [],
-      consistencyScore: (opPattern?.consistencyScore as number | undefined) ?? 0,
+      consistencyScore: metrics.consistencyScore,
     } : {
       avgIntervalHours: (opPattern?.avgIntervalHours as number | undefined) ?? 0,
       peakHoursUTC: (opPattern?.peakHoursUTC as number[] | undefined) ?? [],
@@ -572,8 +594,47 @@ Implementation: ${sanitizedData.addressInfo.implementationAddress ?? "N/A"}
 ${sortedMethods.map(([sel, count]) => {
     const pct = ((count / totalMethodCalls) * 100).toFixed(0);
     const known = METHOD_REGISTRY[sel];
-    return `${sel}${known ? ` (${known.protocol} ${known.type})` : ""}: ${count} calls (${pct}%)`;
+    const typeStr = known?.type ? ` ${known.type}` : "";
+    return `${sel}${known ? ` (${known.protocol}${typeStr})` : ""}: ${count} calls (${pct}%)`;
   }).join("\n")}
+` : "";
+
+  const profile = sanitizedData.behavioralProfile;
+  const profileSections = profile ? `
+=== LIFE STORY EVENTS (GROUND TRUTH — weave into your narrative) ===
+${profile.lifeEvents.map(e => `${e.date}: ${e.description}${e.value ? ` (${e.value})` : ""}`).join("\n")}
+
+=== ACTIVITY BREAKDOWN (GROUND TRUTH — use exact percentages) ===
+${profile.activityBreakdown.map(a => `${a.category}: ${a.percentage}% (${a.txCount} txs)${a.protocols.length ? ` — ${a.protocols.join(", ")}` : ""}`).join("\n")}
+
+=== TOP COUNTERPARTIES (GROUND TRUTH — use resolved names) ===
+${profile.topCounterparties.map((c, i) => `${i + 1}. ${c.name ?? `Unknown (${c.address.slice(0, 10)}...)`}: ${c.txCount} txs, ${c.volumeETH} ETH volume, ${c.direction.replace(/_/g, " ")}`).join("\n")}
+
+=== FAILED TRANSACTION ANALYSIS ===
+Total failed: ${profile.failedTxAnalysis.totalFailed} | Gas units wasted: ${Number(BigInt(profile.failedTxAnalysis.totalGasUnitsWasted)).toLocaleString()}
+Most common failure: ${profile.failedTxAnalysis.mostCommonReason}
+${profile.failedTxAnalysis.worstFailure ? `Worst failure: ${profile.failedTxAnalysis.worstFailure.date} — ${Number(BigInt(profile.failedTxAnalysis.worstFailure.gasUnits)).toLocaleString()} gas units` : ""}
+
+=== TIMEZONE FINGERPRINT ===
+Peak window: ${profile.timezoneFingerprint.peakWindowUTC} UTC | Dead zone: ${profile.timezoneFingerprint.deadZoneUTC} UTC
+24/7: ${profile.timezoneFingerprint.is24x7} | Inference: ${profile.timezoneFingerprint.inference}
+
+=== TOKEN FLOW SUMMARY ===
+Dominant token: ${profile.tokenFlowSummary.dominantToken?.symbol ?? "none"} (${profile.tokenFlowSummary.dominantToken?.txCount ?? 0} txs)
+Unique tokens: ${profile.tokenFlowSummary.uniqueTokens} | Net direction: ${profile.tokenFlowSummary.netDirection}
+Top tokens: ${profile.tokenFlowSummary.topTokens.map(t => `${t.symbol} (${t.txCount})`).join(", ")}
+
+=== BALANCE STORY ===
+Peak: ${profile.balanceStory.peakBalanceETH} ETH (${profile.balanceStory.peakDate ?? "N/A"})
+Current: ${profile.balanceStory.currentBalanceETH} ETH | Drawdown: ${profile.balanceStory.drawdownFromPeak}
+Trend: ${profile.balanceStory.trend}
+
+=== AGENT BIOGRAPHY ===
+Wallet age: ${profile.walletAgeDays} days | Contracts deployed: ${profile.contractsDeployed}
+First action: ${profile.firstAction}
+Protocol loyalty: ${profile.protocolLoyalty}
+${profile.busiestDay ? `Busiest day: ${profile.busiestDay.date} (${profile.busiestDay.txCount} txs)` : ""}
+${profile.longestDormancy ? `Longest dormancy: ${profile.longestDormancy.days} days (${profile.longestDormancy.from} → ${profile.longestDormancy.to})` : ""}
 ` : "";
 
   const userMessage = `Analyze this ${sanitizedData.chainId.toUpperCase()} chain agent:
@@ -583,7 +644,7 @@ Chain: ${sanitizedData.chainId}
 Transaction count: ${sanitizedData.transactions.length}
 Token transfer count: ${sanitizedData.tokenTransfers.length}
 Unique contracts called: ${new Set(sanitizedData.contractCalls.map((c) => c.contract)).size}
-${metricsSection}${walletSection}${groundTruthSection}${methodFreqSection}${addressInfoSection}${contractSection}${balanceSection}${eventsSection}
+${metricsSection}${walletSection}${groundTruthSection}${methodFreqSection}${addressInfoSection}${contractSection}${balanceSection}${eventsSection}${profileSections}
 === RECENT TRANSACTIONS (last 50) ===
 ${JSON.stringify(sanitizedData.transactions.slice(-50), null, 2)}
 

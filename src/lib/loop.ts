@@ -5,7 +5,7 @@ import { discoverNewAgents, getAgentIdentity } from "./erc8004";
 import { discoverOlasAgents, isOlasChain } from "./olas";
 import { createVeniceClient, analyzeAgent, resolveModel, createMockTrustScore } from "./venice";
 import { validateTrustScore } from "./trust-score";
-import { publishAttestation, addToBlocklist } from "./attestation";
+import { publishAttestation } from "./attestation";
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -88,7 +88,6 @@ export async function runOnce(
 
           // Act based on recommendation
           let attestationTx: `0x${string}` | null = null;
-          let blocklistTx: `0x${string}` | null = null;
           let telegramSent = false;
 
           // Publish attestation (on agent's native chain)
@@ -97,18 +96,6 @@ export async function runOnce(
             attestationTx = result.txHash;
           } catch (err) {
             console.error(`[loop] Attestation failed for ${agentAddress}:`, err);
-          }
-
-          // Blocklist + alert for CAUTION and BLOCKLIST
-          if (trustScore.recommendation === "BLOCKLIST") {
-            try {
-              blocklistTx = await addToBlocklist(
-                agentAddress,
-                `Score: ${trustScore.overallScore}/100 on ${chainId}. ${trustScore.summary}`,
-              );
-            } catch (err) {
-              console.error(`[loop] Blocklist failed for ${agentAddress}:`, err);
-            }
           }
 
           if (trustScore.recommendation !== "SAFE") {
@@ -121,7 +108,7 @@ export async function runOnce(
             }
           }
 
-          results.push({ agent, trustScore, attestationTx, blocklistTx, telegramSent });
+          results.push({ agent, trustScore, attestationTx, telegramSent });
           agentsAudited++;
         } catch (err) {
           console.error(`[loop] Failed to audit ${agentAddress} on ${chainId}:`, err);

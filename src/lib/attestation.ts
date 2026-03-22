@@ -5,28 +5,6 @@ import { getChainConfig, getViemChain, getPublicClient } from "./chains";
 import { REPUTATION_REGISTRY_ABI } from "./erc8004";
 import { formatForAttestation } from "./trust-score";
 
-// ─── AgentBlocklist ABI (for blocklist writes on Base) ───────────────────────
-
-const AGENT_BLOCKLIST_ABI = [
-  {
-    name: "blockAgent",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "agent", type: "address" },
-      { name: "reason", type: "string" },
-    ],
-    outputs: [],
-  },
-  {
-    name: "isBlocked",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "agent", type: "address" }],
-    outputs: [{ type: "bool" }],
-  },
-] as const;
-
 // ─── Wallet Client Factory (cached at module level) ─────────────────────────
 
 let cachedAccount: ReturnType<typeof privateKeyToAccount> | null = null;
@@ -122,39 +100,3 @@ export async function verifyAttestation(
   }
 }
 
-// ─── Blocklist Operations ────────────────────────────────────────────────────
-
-export async function addToBlocklist(
-  agentAddress: string,
-  reason: string,
-): Promise<`0x${string}`> {
-  const blocklistAddress = process.env.BLOCKLIST_CONTRACT_ADDRESS;
-  if (!blocklistAddress) throw new Error("BLOCKLIST_CONTRACT_ADDRESS env var required");
-
-  const wallet = getWalletClient("base");
-
-  // Check if already blocked
-  const client = getPublicClient("base");
-  const alreadyBlocked = await client.readContract({
-    address: blocklistAddress as `0x${string}`,
-    abi: AGENT_BLOCKLIST_ABI,
-    functionName: "isBlocked",
-    args: [agentAddress as `0x${string}`],
-  });
-
-  if (alreadyBlocked) {
-    console.log(`[attestation] ${agentAddress} already on blocklist`);
-    return "0x0" as `0x${string}`;
-  }
-
-  const txHash = await wallet.writeContract({
-    account: getAccount(),
-    chain: getViemChain("base"),
-    address: blocklistAddress as `0x${string}`,
-    abi: AGENT_BLOCKLIST_ABI,
-    functionName: "blockAgent",
-    args: [agentAddress as `0x${string}`, reason],
-  });
-
-  return txHash;
-}

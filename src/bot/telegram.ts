@@ -57,7 +57,8 @@ export function createTelegramBot(token: string) {
   // /audit <input> [chain]
   bot.command("audit", async (ctx: Context) => {
     const text = ctx.message?.text ?? "";
-    const parts = text.replace("/audit", "").trim().split(/\s+/);
+    // Strip @BotName suffix for group chat compatibility
+    const parts = text.replace(/^\/audit(@\S+)?/, "").trim().split(/\s+/);
 
     if (parts.length === 0 || !parts[0]) {
       await ctx.reply("Usage: /audit <agent_id | address | name> [chain]\nExample: /audit 42 gnosis");
@@ -94,7 +95,7 @@ export function createTelegramBot(token: string) {
         trustScore = validateTrustScore(raw);
       }
 
-      await ctx.reply(formatForTelegram(trustScore), { parse_mode: "Markdown" });
+      await ctx.reply(formatForTelegram(trustScore, agentData.addressInfo?.ensName), { parse_mode: "Markdown" });
     } catch (err) {
       console.error("[telegram] audit error:", err);
       const userMsg = err instanceof Error && err.message.includes("No transaction activity")

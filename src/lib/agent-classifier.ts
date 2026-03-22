@@ -11,10 +11,14 @@ function normalizeSelector(raw: string | undefined): string | undefined {
   return `0x${lower.slice(0, 8)}`;
 }
 
-export const METHOD_REGISTRY: Record<string, { type: AgentType; protocol: string }> = {
-  // ERC-20
-  "0xa9059cbb": { type: "DEX_TRADER", protocol: "ERC20" },
-  "0x095ea7b3": { type: "DEX_TRADER", protocol: "ERC20" },
+export const METHOD_REGISTRY: Record<string, { type?: AgentType; protocol: string }> = {
+  // ERC-20 (neutral — does not vote for any agent type)
+  "0xa9059cbb": { protocol: "ERC20" },        // transfer
+  "0x095ea7b3": { protocol: "ERC20" },        // approve
+  "0x23b872dd": { protocol: "ERC20" },        // transferFrom
+  // WETH (neutral)
+  "0xd0e30db0": { protocol: "WETH" },         // deposit
+  "0x2e1a7d4d": { protocol: "WETH" },         // withdraw
   // Uniswap V2
   "0x7ff36ab5": { type: "DEX_TRADER", protocol: "Uniswap V2" },
   "0x38ed1739": { type: "DEX_TRADER", protocol: "Uniswap V2" },
@@ -31,9 +35,30 @@ export const METHOD_REGISTRY: Record<string, { type: AgentType; protocol: string
   // Compound V3
   "0xf2b9fdb8": { type: "YIELD_OPTIMIZER", protocol: "Compound V3" },
   "0xf3fef3a3": { type: "YIELD_OPTIMIZER", protocol: "Compound V3" },
-  // WETH
-  "0xd0e30db0": { type: "DEX_TRADER", protocol: "WETH" },
-  "0x2e1a7d4d": { type: "DEX_TRADER", protocol: "WETH" },
+  // Morpho Blue
+  "0xac9650d8": { type: "YIELD_OPTIMIZER", protocol: "Morpho Blue" },  // multicall
+  "0xb66503cf": { type: "YIELD_OPTIMIZER", protocol: "Morpho Blue" },  // supply
+  "0xa99aad89": { type: "YIELD_OPTIMIZER", protocol: "Morpho Blue" },  // borrow
+  "0x20b76e81": { type: "YIELD_OPTIMIZER", protocol: "Morpho Blue" },  // repay
+  "0x2644131b": { type: "LIQUIDATOR", protocol: "Morpho Blue" },       // liquidate
+  // Pendle
+  "0x90d25074": { type: "YIELD_OPTIMIZER", protocol: "Pendle" },       // swapExactTokenForPt
+  "0xdcb5e4b6": { type: "YIELD_OPTIMIZER", protocol: "Pendle" },       // addLiquiditySingleToken
+  "0x7b1a4f09": { type: "YIELD_OPTIMIZER", protocol: "Pendle" },       // redeemRewards
+  // GMX V2
+  "0x11d62ed7": { type: "DEX_TRADER", protocol: "GMX V2" },           // createOrder
+  "0xf242432a": { type: "DEX_TRADER", protocol: "GMX V2" },           // executeOrder
+  "0x0d4d1513": { type: "DEX_TRADER", protocol: "GMX V2" },           // createDeposit
+  // EigenLayer
+  "0xe7a050aa": { type: "YIELD_OPTIMIZER", protocol: "EigenLayer" },   // depositIntoStrategy
+  "0x0dd8dd02": { type: "YIELD_OPTIMIZER", protocol: "EigenLayer" },   // queueWithdrawals
+  "0x54b2bf29": { type: "YIELD_OPTIMIZER", protocol: "EigenLayer" },   // completeQueuedWithdrawals
+  // Hyperlane
+  "0xfa31de01": { type: "BRIDGE_RELAYER", protocol: "Hyperlane" },     // dispatch
+  "0x56d5d475": { type: "BRIDGE_RELAYER", protocol: "Hyperlane" },     // process
+  // Across
+  "0x7b939232": { type: "BRIDGE_RELAYER", protocol: "Across" },        // deposit
+  "0xe63d38ed": { type: "BRIDGE_RELAYER", protocol: "Across" },        // fillRelay
   // 1inch
   "0x12aa3caf": { type: "DEX_TRADER", protocol: "1inch" },
   "0xe449022e": { type: "DEX_TRADER", protocol: "1inch" },
@@ -77,7 +102,7 @@ export function classifyAgentType(txs: readonly TransactionSummary[]): AgentType
   for (const tx of txs) {
     const sel = normalizeSelector(tx.methodId);
     const match = sel ? METHOD_REGISTRY[sel] : undefined;
-    if (match) counts[match.type] = (counts[match.type] ?? 0) + 1;
+    if (match?.type) counts[match.type] = (counts[match.type] ?? 0) + 1;
   }
   if (Object.keys(counts).length) {
     return (Object.entries(counts) as [AgentType, number][]).sort((a, b) => b[1] - a[1])[0][0];
@@ -121,11 +146,40 @@ export function classifyAgentType(txs: readonly TransactionSummary[]): AgentType
   if (topMethodRate > 0.6 && topCounterpartyRate > 0.4) return "DEX_TRADER";
 
   // High failed tx rate → MEV_BOT (frontrunners fail often)
-  const failedCount = txs.filter(tx => tx.success !== undefined && !tx.success).length;
-  const failedRate = txs.length > 0 ? failedCount / txs.length : 0;
-  if (failedRate > 0.3) return "MEV_BOT";
+  // Use only txs with known success status as denominator to avoid dilution
+  const knownOutcomeTxs = txs.filter(tx => tx.success !== undefined);
+  const failedCount = knownOutcomeTxs.filter(tx => !tx.success).length;
+  const failedRate = knownOutcomeTxs.length > 5 ? failedCount / knownOutcomeTxs.length : 0;
+  if (failedRate > 0.3 && topMethodRate > 0.5) return "MEV_BOT";
+
+  // MEV_BOT: contract + high token tx rate + concentrated counterparty + high volume
+  const tokenMethods = new Set(["0xa9059cbb", "0x23b872dd", "0x095ea7b3"]);
+  const tokenTxCount = txs.filter(tx => {
+    const sel = normalizeSelector(tx.methodId);
+    return sel && tokenMethods.has(sel);
+  }).length;
+  const tokenRate = txs.length > 0 ? tokenTxCount / txs.length : 0;
+  if (tokenRate > 0.4 && topCounterpartyRate > 0.5 && topMethodRate > 0.5 && txs.length > 50) return "MEV_BOT";
+
+  // High method concentration + moderate volume → DEX_TRADER
+  if (topMethodRate > 0.5 && txs.length > 20) return "DEX_TRADER";
 
   return "UNKNOWN";
+}
+
+export function computeConsistencyScore(txs: readonly TransactionSummary[]): number {
+  const timestamps = txs.map(tx => tx.timestamp).filter(ts => ts > 0).sort((a, b) => a - b);
+  if (timestamps.length < 3) return 0.5; // insufficient data — neutral
+
+  const intervals: number[] = [];
+  for (let i = 1; i < timestamps.length; i++) {
+    intervals.push(timestamps[i] - timestamps[i - 1]);
+  }
+  const mean = intervals.reduce((s, v) => s + v, 0) / intervals.length;
+  if (mean === 0) return 1.0; // all same timestamp — perfectly consistent
+  const variance = intervals.reduce((s, v) => s + (v - mean) ** 2, 0) / intervals.length;
+  const cv = Math.sqrt(variance) / mean;
+  return Math.max(0, Math.min(1, 1 - cv / 2));
 }
 
 export function detectERC4337(txs: readonly TransactionSummary[]): boolean {
@@ -155,17 +209,26 @@ export function computeWalletClassification(
   const signals: string[] = [];
   const isERC4337 = detectERC4337(txs);
 
-  // ── Tier 1: Definitive signals ──
+  // ── Tier 1: Definitive signals (with sanity check) ──
   if (addressInfo?.isContract) {
-    signals.push("Address is a smart contract (Blockscout is_contract=true)");
-    return {
-      isDefinitelyContract: true,
-      isERC4337,
-      humanScore: 0,
-      signals,
-      tier1Decisive: true,
-      confidence: computeConfidence(txs.length),
-    };
+    // Sanity check: some block explorers mark high-profile EOAs as "contract"
+    // If behavioral signals are strongly human-like, fall through to Tier 2
+    const quickHumanCheck = quickHumanSignalCheck(txs, addressInfo);
+    if (quickHumanCheck.likelyHuman) {
+      signals.push("Blockscout reports is_contract=true, but behavioral signals suggest EOA");
+      signals.push(...quickHumanCheck.reasons);
+      // Fall through to Tier 2 instead of returning immediately
+    } else {
+      signals.push("Address is a smart contract (Blockscout is_contract=true)");
+      return {
+        isDefinitelyContract: true,
+        isERC4337,
+        humanScore: 0,
+        signals,
+        tier1Decisive: true,
+        confidence: computeConfidence(txs.length),
+      };
+    }
   }
 
   if (isERC4337) {
@@ -192,7 +255,7 @@ export function computeWalletClassification(
   humanScore = applyNonceGapRate(txs, humanScore, signals);
   humanScore = applyBurstDetection(txs, humanScore, signals);
 
-  if (addressInfo?.ensName) {
+  if (addressInfo?.ensName && !addressInfo.isContract) {
     humanScore += 15;
     signals.push(`ENS name: ${addressInfo.ensName}`);
   }
@@ -453,6 +516,61 @@ function applyBurstDetection(
     return score - 10;
   }
   return score;
+}
+
+/**
+ * Quick behavioral check to detect if an address flagged as "contract" by Blockscout
+ * actually behaves like a human wallet (false positive guard).
+ */
+function quickHumanSignalCheck(
+  txs: readonly TransactionSummary[],
+  addressInfo?: AddressInfo,
+): { likelyHuman: boolean; reasons: string[] } {
+  if (txs.length < 5) return { likelyHuman: false, reasons: [] };
+
+  const reasons: string[] = [];
+  let humanSignals = 0;
+
+  // Diverse methods = human-like
+  const methods = new Set(txs.map(tx => normalizeSelector(tx.methodId) ?? "0x"));
+  if (methods.size > 5) {
+    humanSignals++;
+    reasons.push(`Diverse methods (${methods.size} unique)`);
+  }
+
+  // Irregular timing = human-like
+  const timestamps = txs.map(tx => tx.timestamp).sort((a, b) => a - b);
+  const intervals: number[] = [];
+  for (let i = 1; i < timestamps.length; i++) {
+    intervals.push(timestamps[i] - timestamps[i - 1]);
+  }
+  if (intervals.length > 2) {
+    const mean = intervals.reduce((s, v) => s + v, 0) / intervals.length;
+    const cv = mean > 0
+      ? Math.sqrt(intervals.reduce((s, v) => s + (v - mean) ** 2, 0) / intervals.length) / mean
+      : 0;
+    if (cv > 1.0) {
+      humanSignals++;
+      reasons.push(`High timing variance (CV=${cv.toFixed(2)})`);
+    }
+  }
+
+  // ENS name = strong signal (weighted as 2)
+  const hasENS = !!addressInfo?.ensName;
+  if (hasENS) {
+    humanSignals += 2;
+    reasons.push(`Has ENS name: ${addressInfo!.ensName}`);
+  }
+
+  // Diverse counterparties = human-like
+  const counterparties = new Set(txs.map(tx => tx.to?.toLowerCase()).filter(Boolean));
+  if (counterparties.size > 10) {
+    humanSignals++;
+    reasons.push(`Many counterparties (${counterparties.size})`);
+  }
+
+  // Require 1 strong signal (ENS or high timing CV) + 1 weak, i.e. score >= 3
+  return { likelyHuman: humanSignals >= 3, reasons };
 }
 
 function computeConfidence(txCount: number): "LOW" | "MEDIUM" | "HIGH" {

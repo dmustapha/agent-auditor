@@ -145,6 +145,77 @@ export interface AgentMetrics {
   readonly netFlowETH: string;
   readonly protocolsUsed: readonly string[];
   readonly walletClassification: WalletClassification;
+  readonly consistencyScore: number;
+}
+
+// ─── Behavioral Profile Types ───────────────────────────────────────────────
+
+export interface LifeEvent {
+  readonly date: string; // ISO date
+  readonly type: "biggest_gain" | "biggest_loss" | "costliest_failure" | "busiest_day" | "longest_dormancy" | "peak_balance" | "first_action" | "drain_event" | "contract_deployment";
+  readonly description: string;
+  readonly value?: string; // ETH or token amount
+  readonly txHash?: string;
+}
+
+export interface ActivityCategory {
+  readonly category: "swapping" | "lending" | "borrowing" | "lp_provision" | "staking" | "bridging" | "governance" | "keeper_ops" | "oracle_ops" | "nft_trading" | "transfers" | "contract_creation" | "other";
+  readonly percentage: number;
+  readonly txCount: number;
+  readonly protocols: readonly string[];
+}
+
+export interface ResolvedCounterparty {
+  readonly address: string;
+  readonly name: string | null; // resolved protocol name or null
+  readonly txCount: number;
+  readonly volumeETH: string;
+  readonly direction: "mostly_outbound" | "mostly_inbound" | "balanced";
+}
+
+export interface FailedTxAnalysis {
+  readonly totalFailed: number;
+  readonly totalGasUnitsWasted: string; // gas units (not Wei — no gasPrice available)
+  readonly mostCommonReason: string; // inferred from patterns
+  readonly worstFailure: { readonly txHash: string; readonly gasUnits: string; readonly date: string } | null;
+}
+
+export interface TimezoneFingerprint {
+  readonly peakWindowUTC: string; // e.g. "01:00-09:00"
+  readonly deadZoneUTC: string; // e.g. "14:00-22:00"
+  readonly inference: string; // e.g. "Likely East Asian timezone operator"
+  readonly is24x7: boolean; // true = bot with no sleep pattern
+}
+
+export interface TokenFlowSummary {
+  readonly dominantToken: { readonly symbol: string; readonly txCount: number } | null;
+  readonly uniqueTokens: number;
+  readonly netDirection: "outbound" | "inbound" | "balanced";
+  readonly topTokens: readonly { readonly symbol: string; readonly txCount: number }[];
+}
+
+export interface BalanceStory {
+  readonly peakBalanceETH: string;
+  readonly peakDate: string | null;
+  readonly currentBalanceETH: string;
+  readonly drawdownFromPeak: string; // percentage like "-82%"
+  readonly trend: "accumulating" | "depleting" | "stable" | "volatile";
+}
+
+export interface BehavioralProfile {
+  readonly lifeEvents: readonly LifeEvent[];
+  readonly activityBreakdown: readonly ActivityCategory[];
+  readonly topCounterparties: readonly ResolvedCounterparty[];
+  readonly failedTxAnalysis: FailedTxAnalysis;
+  readonly timezoneFingerprint: TimezoneFingerprint;
+  readonly tokenFlowSummary: TokenFlowSummary;
+  readonly balanceStory: BalanceStory;
+  readonly contractsDeployed: number;
+  readonly walletAgeDays: number;
+  readonly firstAction: string; // description of first ever tx
+  readonly protocolLoyalty: string; // e.g. "94% of swaps through Uniswap V3"
+  readonly busiestDay: { readonly date: string; readonly txCount: number } | null;
+  readonly longestDormancy: { readonly days: number; readonly from: string; readonly to: string } | null;
 }
 
 // ─── Blockscout Enrichment Types ────────────────────────────────────────────
@@ -183,6 +254,7 @@ export interface AgentTransactionData {
   readonly coinBalanceHistory?: CoinBalancePoint[];
   readonly eventLogs?: EventLog[];
   readonly addressInfo?: AddressInfo;
+  readonly behavioralProfile?: BehavioralProfile;
 }
 
 // ─── ERC-8004 Types ──────────────────────────────────────────────────────────
@@ -318,7 +390,6 @@ export interface AuditResult {
   readonly agent: DiscoveredAgent;
   readonly trustScore: TrustScore;
   readonly attestationTx: `0x${string}` | null;
-  readonly blocklistTx: `0x${string}` | null;
   readonly telegramSent: boolean;
 }
 
@@ -359,6 +430,10 @@ export interface AnalyzeResponse {
   readonly walletClassification?: WalletClassification;
   readonly successRate?: number;
   readonly ethPrice?: number;
+  readonly attestationTxHash?: string;
+  readonly chainResults?: readonly { chainId: string; txCount: number }[];
+  readonly behavioralProfile?: BehavioralProfile;
+  readonly ensName?: string | null;
 }
 
 export interface AnalyzeErrorResponse {
@@ -371,6 +446,7 @@ export interface AnalyzeErrorResponse {
 
 export interface UITrustScore {
   readonly address: string;
+  readonly ensName?: string | null;
   readonly chainId: ChainId;
   readonly chainName: string;
   readonly score: number;
@@ -416,6 +492,7 @@ export interface UITrustScore {
   readonly uniqueCounterparties?: number;
   readonly txFrequencyPerDay?: number;
   readonly balanceTrend?: "accumulating" | "depleting" | "stable";
+  readonly behavioralProfile?: BehavioralProfile;
 }
 
 // ─── Sidebar / localStorage Types ───────────────────────────────────────────
@@ -473,7 +550,7 @@ export interface DirectoryAgent {
   readonly anomalies: readonly string[];
   readonly txCount: number;
   readonly lastActive: number;
-  readonly source: "seed" | "erc8004" | "olas";
+  readonly source: "seed" | "erc8004" | "olas" | "live";
 }
 
 export interface DirectoryResponse {

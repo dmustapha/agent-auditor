@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, Suspense } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Sidebar } from "./components/Sidebar";
 import { SmartInput, detectInputType } from "./components/SmartInput";
@@ -38,9 +38,9 @@ function deriveBadge(
 const VALID_CHAINS = new Set(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "all"]);
 
 const EXAMPLE_AGENTS = [
-  { label: "Uniswap V3 Router", address: "0xE592427A0AEce92De3Edee1F18E0157C05861564", chain: "ethereum" as ChainId },
-  { label: "Chainlink ETH/USD", address: "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419", chain: "ethereum" as ChainId },
-  { label: "jaredfromsubway.eth", address: "0x6b75d8AF000000e20B7a7DDf000Ba900b4009A80", chain: "ethereum" as ChainId },
+  { label: "Olas Keeper (Gnosis)", address: "0x77af31De935740567Cf4fF1986D04B2c964A786a", chain: "gnosis" as ChainId },
+  { label: "MEV Bot (Ethereum)", address: "0x6b75d8AF000000e20B7a7DDf000Ba900b4009A80", chain: "ethereum" as ChainId },
+  { label: "Aave Liquidator (Base)", address: "0x80D4e3d92B4AA394b1B58cB568a6e2DE0FE2698E", chain: "base" as ChainId },
 ];
 
 function HeroStatCounter({ end, suffix = "", format }: { end: number; suffix?: string; format?: (v: number) => string }) {
@@ -86,8 +86,18 @@ function Home() {
   const [forceAnalysis, setForceAnalysis] = useState(false);
   const [walletClassification, setWalletClassification] = useState<WalletClassification | null>(null);
   const [hasAgentIdentity, setHasAgentIdentity] = useState(false);
+  const [attestationTxHash, setAttestationTxHash] = useState<string | null>(null);
+  const [chainResults, setChainResults] = useState<readonly { chainId: string; txCount: number }[]>([]);
   const { records: recentAudits, addAudit } = useRecentAudits();
-  const { agents: directoryAgents, allAgents, loading: directoryLoading, error: directoryError, lastSynced } = useDirectory(activeFilter, sortField);
+  const { agents: directoryAgents, allAgents, loading: directoryLoading, error: directoryError, lastSynced } = useDirectory(activeFilter, sortField, recentAudits);
+  const agentCount = useMemo(() => {
+    const addresses = new Set([
+      ...allAgents.map(a => a.address.toLowerCase()),
+      ...recentAudits.map(r => r.address.toLowerCase()),
+    ]);
+    return addresses.size || 1;
+  }, [allAgents, recentAudits]);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const stepTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const lastSearchRef = useRef<{ input: string; chain: ChainId | "all" } | null>(null);
@@ -108,6 +118,8 @@ function Home() {
     setForceAnalysis(false);
     setWalletClassification(null);
     setHasAgentIdentity(false);
+    setAttestationTxHash(null);
+    setChainResults([]);
 
     // Clear any prior timers
     stepTimersRef.current.forEach(clearTimeout);
@@ -164,7 +176,14 @@ function Home() {
       const data: AnalyzeResponse = await res.json();
       setWalletClassification(data.walletClassification ?? null);
       setHasAgentIdentity(data.agentIdentity != null);
-      const uiScore = formatForUI(data.trustScore, data.successRate, data.ethPrice);
+      setAttestationTxHash(data.attestationTxHash ?? null);
+      setChainResults(data.chainResults ?? []);
+      const uiScore = formatForUI(data.trustScore, {
+        successRate: data.successRate,
+        ethPrice: data.ethPrice,
+        behavioralProfile: data.behavioralProfile,
+        ensName: data.ensName ?? null,
+      });
 
       // Complete steps 4+5 after successful fetch
       setLoadingSteps((prev) => prev.map((s, i) =>
@@ -328,7 +347,7 @@ function Home() {
 
           <div className="aa-hero-stats" aria-label="Platform statistics">
             <div>
-              <HeroStatCounter end={101} />
+              <HeroStatCounter key={agentCount} end={agentCount} />
               <span className="aa-stat-label">Agents Indexed</span>
             </div>
             <div>
@@ -433,7 +452,7 @@ function Home() {
 
           {!loading && result && !shouldGate && (
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              <TrustScoreCard score={result.trustScore} badge={deriveBadge(walletClassification, hasAgentIdentity)} />
+              <TrustScoreCard score={result.trustScore} badge={deriveBadge(walletClassification, hasAgentIdentity)} attestationTxHash={attestationTxHash} chainResults={chainResults} />
               <div className="aa-reveal aa-delay-5 visible">
                 <TransactionTable
                   transactions={result.transactions}

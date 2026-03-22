@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { useThreatFeed } from "@/hooks/useThreatFeed";
 import { computeSessionStats } from "@/hooks/useSessionStats";
@@ -8,7 +9,7 @@ import { Watchlist } from "./Watchlist";
 import { ThreatFeed } from "./ThreatFeed";
 import { SessionStats } from "./SessionStats";
 import { AgentEcosystem } from "./AgentEcosystem";
-import type { AuditRecord, ChainId, DirectoryAgent, AgentType } from "@/lib/types";
+import type { AuditRecord, ChainId, DirectoryAgent, AgentType, ThreatFeedEntry } from "@/lib/types";
 import pkg from "../../../package.json";
 
 interface SidebarProps {
@@ -24,6 +25,22 @@ export function Sidebar({ activeItem = "dashboard", recentAudits, onSelectAudit,
   const { entries: watchlistEntries, pin, unpin, isPinned } = useWatchlist();
   const { entries: threatEntries, error: threatError } = useThreatFeed();
   const stats = computeSessionStats(recentAudits);
+
+  // Merge synthetic BLOCKLIST entries from recent audits into threat feed
+  const mergedThreats = useMemo(() => {
+    const syntheticThreats: ThreatFeedEntry[] = recentAudits
+      .filter(r => r.recommendation === "BLOCKLIST")
+      .map(r => ({
+        agentAddress: r.address,
+        reason: `BLOCKLIST: score ${r.score}/100 (${r.agentType})`,
+        blockNumber: 0n,
+        txHash: "local",
+        timestamp: r.timestamp,
+      }));
+    return [...threatEntries, ...syntheticThreats]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 50);
+  }, [recentAudits, threatEntries]);
 
   const handleSelect = (address: string, chainId: ChainId) => {
     onSelectAudit?.(address, chainId);
@@ -83,7 +100,7 @@ export function Sidebar({ activeItem = "dashboard", recentAudits, onSelectAudit,
           activeFilter={activeFilter}
           onFilterChange={onFilterChange}
         />
-        <ThreatFeed entries={threatEntries} error={threatError} />
+        <ThreatFeed entries={mergedThreats} error={threatError} />
         <RecentAudits
           records={recentAudits}
           onSelect={handleSelect}

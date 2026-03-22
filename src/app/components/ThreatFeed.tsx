@@ -35,7 +35,7 @@ export function ThreatFeed({ entries, error }: ThreatFeedProps) {
               <span className="aa-threat-reason" title={e.reason}>
                 {e.reason.length > 40 ? `${e.reason.slice(0, 40)}...` : e.reason}
               </span>
-              <span className="aa-threat-block">#{e.blockNumber.toString()}</span>
+              <span className="aa-threat-block">{e.txHash === "local" ? "Local" : `#${e.blockNumber.toString()}`}</span>
             </li>
           ))}
         </ul>

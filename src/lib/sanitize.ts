@@ -5,6 +5,11 @@ const INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?previous\s+instructions?/gi,
   /new\s+instructions?:/gi,
   /you\s+are\s+now/gi,
+  /\bassistant\s*:/gi,
+  /\bsystem\s*:/gi,
+  /do\s+not\s+follow/gi,
+  /override\s+(all\s+)?rules/gi,
+  /forget\s+(all\s+)?(previous\s+)?instructions/gi,
 ];
 
 export function sanitizeForPrompt(value: string, maxLength = 200): string {

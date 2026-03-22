@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import type { DirectoryAgent, AgentType, SortField } from "@/lib/types";
+import type { DirectoryAgent, AgentType, SortField, AuditRecord } from "@/lib/types";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -29,7 +29,27 @@ function sortAgents(agents: readonly DirectoryAgent[], field: SortField): readon
   }
 }
 
-export function useDirectory(filter: AgentType | null, sort: SortField): UseDirectoryReturn {
+function auditToDirectoryAgent(record: AuditRecord): DirectoryAgent {
+  return {
+    address: record.address,
+    chainId: record.chainId,
+    name: `${record.agentType} ${record.address.slice(0, 8)}`,
+    agentType: record.agentType,
+    score: record.score,
+    recommendation: record.recommendation,
+    behavioralNarrative: "",
+    financialSummary: { totalGasSpentETH: "0", netFlowETH: "0" },
+    operationalPattern: { peakHoursUTC: [], consistencyScore: 0 },
+    protocolsUsed: [],
+    funFact: "",
+    anomalies: [],
+    txCount: 0,
+    lastActive: record.timestamp,
+    source: "live",
+  };
+}
+
+export function useDirectory(filter: AgentType | null, sort: SortField, recentAudits?: readonly AuditRecord[]): UseDirectoryReturn {
   const [allAgents, setAllAgents] = useState<readonly DirectoryAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,12 +88,22 @@ export function useDirectory(filter: AgentType | null, sort: SortField): UseDire
     };
   }, []);
 
+  // Merge seed agents with live audit records (deduplicate by address)
+  const allMerged = useMemo(() => {
+    if (!recentAudits?.length) return allAgents;
+    const seen = new Set(allAgents.map(a => a.address.toLowerCase()));
+    const liveAgents = recentAudits
+      .filter(r => !seen.has(r.address.toLowerCase()))
+      .map(auditToDirectoryAgent);
+    return [...allAgents, ...liveAgents];
+  }, [allAgents, recentAudits]);
+
   const agents = useMemo(() => {
     const filtered = filter
-      ? allAgents.filter((a) => a.agentType === filter)
-      : allAgents;
+      ? allMerged.filter((a) => a.agentType === filter)
+      : allMerged;
     return sortAgents(filtered, sort);
-  }, [allAgents, filter, sort]);
+  }, [allMerged, filter, sort]);
 
-  return { agents, allAgents, loading, error, lastSynced };
+  return { agents, allAgents: allMerged, loading, error, lastSynced };
 }

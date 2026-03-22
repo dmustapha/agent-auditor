@@ -212,6 +212,26 @@ export async function getAddressInfo(
   }
 }
 
+/**
+ * Resolve a contract address to its name via Blockscout.
+ * Tries smart-contract endpoint first (verified name), falls back to address info.
+ * Returns null if no name found. Non-throwing.
+ */
+export async function getContractName(
+  chainId: ChainId,
+  address: string,
+): Promise<string | null> {
+  try {
+    const config = getChainConfig(chainId);
+    // Try smart contract endpoint first (has verified name)
+    const scUrl = `${config.blockscoutUrl}/smart-contracts/${address}`;
+    const scRes = await rateLimitedFetch(chainId, scUrl);
+    const scData = (await scRes.json()) as Record<string, unknown>;
+    if (scData.name && typeof scData.name === "string") return scData.name;
+  } catch { /* not a verified contract */ }
+  return null;
+}
+
 export async function fetchAgentData(
   chainId: ChainId,
   address: string,
@@ -245,9 +265,9 @@ export async function fetchAgentData(
 }
 
 /**
- * Detect which chains have activity for an address.
- * Checks transaction count on each chain via Blockscout counters endpoint.
- * Returns first chain with activity, or null.
+ * Detect which chain has the most activity for an address.
+ * Checks transaction count on each chain via Blockscout and returns the
+ * chain with the highest transactions_count, or null if none found.
  */
 export async function detectChainWithActivity(
   address: string,
@@ -260,17 +280,41 @@ export async function detectChainWithActivity(
       const url = `${config.blockscoutUrl}/addresses/${address}`;
       const res = await rateLimitedFetch(chainId, url);
       const data: { transactions_count?: string } = await res.json();
-      if (data.transactions_count && parseInt(data.transactions_count) > 0) {
-        return chainId;
-      }
-      return null;
+      const count = parseInt(data.transactions_count ?? "0");
+      return { chainId, count };
     })
   );
 
+  let best: { chainId: ChainId; count: number } | null = null;
   for (const result of results) {
-    if (result.status === "fulfilled" && result.value !== null) {
-      return result.value;
+    if (result.status === "fulfilled" && result.value.count > 0) {
+      if (!best || result.value.count > best.count) {
+        best = result.value;
+      }
     }
   }
-  return null;
+  return best?.chainId ?? null;
+}
+
+export async function detectAllChainsWithActivity(
+  address: string,
+): Promise<{ chainId: ChainId; txCount: number }[]> {
+  const chains: ChainId[] = ["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon"];
+
+  const results = await Promise.allSettled(
+    chains.map(async (chainId) => {
+      const config = getChainConfig(chainId);
+      const url = `${config.blockscoutUrl}/addresses/${address}`;
+      const res = await rateLimitedFetch(chainId, url);
+      const data: { transactions_count?: string } = await res.json();
+      const count = parseInt(data.transactions_count ?? "0");
+      return { chainId, txCount: count };
+    })
+  );
+
+  return results
+    .filter((r): r is PromiseFulfilledResult<{ chainId: ChainId; txCount: number }> =>
+      r.status === "fulfilled" && r.value.txCount > 0)
+    .map(r => r.value)
+    .sort((a, b) => b.txCount - a.txCount);
 }
