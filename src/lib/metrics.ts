@@ -12,8 +12,11 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
     ? Number(totalGasWei / BigInt(transactions.length))
     : 0;
 
-  // Timestamps
-  const timestamps = transactions.map(tx => tx.timestamp).sort((a, b) => a - b);
+  // Timestamps (filter out invalid zero/NaN values)
+  const timestamps = transactions
+    .map(tx => tx.timestamp)
+    .filter(ts => ts > 0 && Number.isFinite(ts))
+    .sort((a, b) => a - b);
   const firstSeen = timestamps.length > 0 ? timestamps[0] : null;
   const lastSeen = timestamps.length > 0 ? timestamps[timestamps.length - 1] : null;
 
@@ -63,12 +66,18 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
   const successCount = transactions.filter(tx => tx.success).length;
   const successRate = transactions.length > 0 ? successCount / transactions.length : 0;
 
-  // Most called contracts (top 5)
+  // Most interacted addresses (top 5, excluding self — bidirectional)
   const contractCounts = new Map<string, number>();
   for (const tx of transactions) {
     if (tx.to && tx.to !== "CONTRACT_CREATION") {
-      const addr = tx.to.toLowerCase();
-      contractCounts.set(addr, (contractCounts.get(addr) ?? 0) + 1);
+      const toAddr = tx.to.toLowerCase();
+      if (toAddr !== selfLower) {
+        contractCounts.set(toAddr, (contractCounts.get(toAddr) ?? 0) + 1);
+      }
+    }
+    const fromAddr = tx.from.toLowerCase();
+    if (fromAddr !== selfLower) {
+      contractCounts.set(fromAddr, (contractCounts.get(fromAddr) ?? 0) + 1);
     }
   }
   const mostCalledContracts = Array.from(contractCounts.entries())

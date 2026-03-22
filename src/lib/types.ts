@@ -260,6 +260,17 @@ export interface TrustScore {
   readonly isLikelyHumanWallet: boolean;
   readonly walletClassification?: WalletClassification;
   readonly activityProfile?: ActivityProfile;
+  // Dossier enrichment fields (locally computed)
+  readonly totalTransactions?: number;
+  readonly successRate?: number;
+  readonly avgGasPerTx?: number;
+  readonly nonceGaps?: number;
+  readonly firstSeenTimestamp?: number | null;
+  readonly lastSeenTimestamp?: number | null;
+  readonly mostCalledContracts?: readonly string[];
+  readonly uniqueCounterparties?: number;
+  readonly txFrequencyPerDay?: number;
+  readonly balanceTrend?: "accumulating" | "depleting" | "stable";
 }
 
 export interface TrustFlag {
@@ -395,6 +406,16 @@ export interface UITrustScore {
   readonly activityProfile?: ActivityProfile;
   readonly successRate?: number;
   readonly ethPrice?: number;
+  // Dossier enrichment
+  readonly totalTransactions?: number;
+  readonly avgGasPerTx?: number;
+  readonly nonceGaps?: number;
+  readonly firstSeenTimestamp?: number | null;
+  readonly lastSeenTimestamp?: number | null;
+  readonly mostCalledContracts?: readonly string[];
+  readonly uniqueCounterparties?: number;
+  readonly txFrequencyPerDay?: number;
+  readonly balanceTrend?: "accumulating" | "depleting" | "stable";
 }
 
 // ─── Sidebar / localStorage Types ───────────────────────────────────────────

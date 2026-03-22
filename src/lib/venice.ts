@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag, ActivityProfile } from "./types";
 import { sanitizeForPrompt } from "./sanitize";
+import { METHOD_REGISTRY } from "./agent-classifier";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -176,6 +177,15 @@ You MUST respond ONLY with a JSON object in EXACTLY this structure (no markdown,
   }
 }
 
+CRITICAL INSTRUCTIONS FOR activityProfile:
+- primaryActivity: Describe what the agent does based on the protocols and methods in the provided data
+- strategies: Infer from the METHOD_REGISTRY matches and transaction patterns shown
+- protocolBreakdown: Use the "Protocols detected" list — compute percentages from method frequency
+- riskBehaviors: Derive from flags, nonce gaps, failed txs — not generic phrases
+- successMetrics: Use the provided successRate and netFlowETH values directly
+
+DO NOT return "Unknown" or empty values for any activityProfile field. If data is limited, describe what you CAN observe.
+
 The four breakdown values MUST sum to overallScore (±1 rounding). Each breakdown value is 0-25. overallScore is 0-100.`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -189,16 +199,18 @@ function normalizeVeniceResponse(
   address: string,
   chainId: ChainId,
   metrics?: AgentMetrics,
+  totalTransactions?: number,
+  coinBalanceHistory?: { value: string }[],
 ): TrustScore {
   // Handle alternate field names Venice models sometimes use
   const score = (raw.overallScore ?? raw.trustScore ?? raw.score ?? 50) as number;
 
-  const breakdown = (raw.breakdown as Record<string, number> | undefined) ?? {
+  const breakdown = { ...(raw.breakdown as Record<string, number> | undefined) ?? {
     transactionPatterns: Math.round(score * 0.25),
     contractInteractions: Math.round(score * 0.28),
     fundFlow: Math.round(score * 0.22),
     behavioralConsistency: 0,
-  };
+  } };
   // Ensure breakdown sums to score — scale down if Venice returned inflated values
   let partial = (breakdown.transactionPatterns ?? 0) +
     (breakdown.contractInteractions ?? 0) +
@@ -248,11 +260,22 @@ function normalizeVeniceResponse(
     largestSingleTxETH: (Number(BigInt(metrics.largestSingleTxWei)) / 1e18).toFixed(6),
   } : undefined;
 
+  const rawProtocols = Array.isArray(raw.protocolsUsed) ? raw.protocolsUsed as string[] : [];
+  // Also extract protocol names from Venice's activityProfile.protocolBreakdown
+  const veniceProfileProtocols: string[] = [];
+  if (raw.activityProfile && Array.isArray((raw.activityProfile as Record<string, unknown>).protocolBreakdown)) {
+    for (const p of (raw.activityProfile as Record<string, unknown>).protocolBreakdown as Record<string, unknown>[]) {
+      const name = p.protocol as string;
+      if (name && !name.toLowerCase().includes("unknown")) veniceProfileProtocols.push(name);
+    }
+  }
+  // Filter out "Unknown" from raw Venice protocols
+  const cleanRawProtocols = [...rawProtocols, ...veniceProfileProtocols].filter(p => !p.toLowerCase().includes("unknown"));
   const overriddenProtocols = metrics?.protocolsUsed.length
-    ? [...new Set([...metrics.protocolsUsed, ...(raw.protocolsUsed as string[] ?? [])])]
-    : (raw.protocolsUsed as string[] ?? []);
+    ? [...new Set([...metrics.protocolsUsed, ...cleanRawProtocols])]
+    : cleanRawProtocols.length > 0 ? [...new Set(cleanRawProtocols)] : [];
 
-  const activityProfile: ActivityProfile | undefined = raw.activityProfile
+  let activityProfile: ActivityProfile | undefined = raw.activityProfile
     ? {
         primaryActivity: (raw.activityProfile as Record<string, unknown>).primaryActivity as string || "Unknown activity",
         strategies: Array.isArray((raw.activityProfile as Record<string, unknown>).strategies)
@@ -272,10 +295,98 @@ function normalizeVeniceResponse(
       }
     : undefined;
 
+  // Convert activeHoursUTC histogram (24 counts) to peak hour indices (top hours)
+  const peakHourIndices = metrics ? (() => {
+    const hours = metrics.activeHoursUTC;
+    const totalTx = hours.reduce((s, v) => s + v, 0);
+    if (totalTx === 0) return [];
+    // Return hours with above-average activity, sorted by count descending
+    const avg = totalTx / 24;
+    return hours
+      .map((count, hour) => ({ hour, count }))
+      .filter(h => h.count > avg)
+      .sort((a, b) => b.count - a.count)
+      .map(h => h.hour);
+  })() : undefined;
+
   const walletClass = metrics?.walletClassification;
   const humanWallet = walletClass
     ? (walletClass.humanScore > 70 && !walletClass.isDefinitelyContract)
     : (typeof raw.isLikelyHumanWallet === "boolean" ? raw.isLikelyHumanWallet : false);
+
+  // Resolve agentType: fall back to local classifier when Venice returns UNKNOWN
+  const veniceAgentType = (raw.agentType as AgentType | undefined) ?? "UNKNOWN";
+  const localAgentType = metrics?.agentType ?? "UNKNOWN";
+  const finalAgentType = veniceAgentType === "UNKNOWN" && localAgentType !== "UNKNOWN" ? localAgentType : veniceAgentType;
+
+  // Last resort: derive protocol info from most-called contracts
+  const resolvedProtocols = overriddenProtocols.length > 0
+    ? overriddenProtocols
+    : metrics?.mostCalledContracts?.length
+      ? metrics.mostCalledContracts.slice(0, 3).map(c => `Contract ${c.slice(0, 8)}...`)
+      : [`${chainId} DeFi`];
+  const resolvedType = finalAgentType !== "UNKNOWN" ? finalAgentType : "Agent";
+
+  // Patch vague activityProfile fields with locally computed data
+  const VAGUE_ACTIVITY_PHRASES = ["unknown", "insufficient data", "limited data", "single token transfer", "single transaction", "not enough data", "unable to determine", "no clear pattern"];
+  const isVagueActivity = (text: string) => !text || text.length < 30 || VAGUE_ACTIVITY_PHRASES.some(p => text.toLowerCase().includes(p));
+
+  if (activityProfile) {
+    if (isVagueActivity(activityProfile.primaryActivity)) {
+      activityProfile = { ...activityProfile, primaryActivity: `${resolvedType} operating on ${chainId} via ${resolvedProtocols.join(", ")}` };
+    }
+    if (!activityProfile.strategies.length || activityProfile.strategies.every(s => s.toLowerCase().includes("unknown"))) {
+      const actionVerb = resolvedType === "KEEPER" ? "Automating tasks via"
+        : resolvedType === "LIQUIDATOR" ? "Liquidating positions on"
+        : resolvedType === "YIELD_OPTIMIZER" ? "Optimizing yield on"
+        : resolvedType === "ORACLE" ? "Feeding data to"
+        : resolvedType === "GOVERNANCE" ? "Participating in governance on"
+        : "Trading on";
+      const inferredStrategies = resolvedProtocols
+        .filter(p => p !== "ERC20" && p !== "WETH")
+        .map(p => `${actionVerb} ${p}`);
+      activityProfile = { ...activityProfile, strategies: inferredStrategies.length > 0 ? inferredStrategies : ["Token transfers"] };
+    }
+    // Patch protocolBreakdown when it contains "Unknown"
+    const hasUnknownProtocol = activityProfile.protocolBreakdown.some(p => p.protocol.toLowerCase().includes("unknown"));
+    if (!activityProfile.protocolBreakdown.length || hasUnknownProtocol) {
+      const actionVerb2 = resolvedType === "KEEPER" ? "Automating tasks via"
+        : resolvedType === "LIQUIDATOR" ? "Liquidating positions on"
+        : "Trading on";
+      const protocolNames2 = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
+      if (protocolNames2.length > 0) {
+        activityProfile = { ...activityProfile, protocolBreakdown: protocolNames2.map(p => ({ protocol: p, percentage: Math.round(100 / protocolNames2.length), action: `${actionVerb2} ${p}` })) };
+      }
+    }
+    if (!activityProfile.successMetrics && metrics) {
+      activityProfile = { ...activityProfile, successMetrics: `${(metrics.successRate * 100).toFixed(1)}% success rate over ${metrics.protocolsUsed.length} protocols` };
+    }
+  } else if (metrics) {
+    // Venice returned no activityProfile at all — construct from local data
+    const actionVerb = resolvedType === "KEEPER" ? "Automating tasks via"
+      : resolvedType === "LIQUIDATOR" ? "Liquidating positions on"
+      : resolvedType === "YIELD_OPTIMIZER" ? "Optimizing yield on"
+      : resolvedType === "ORACLE" ? "Feeding data to"
+      : resolvedType === "GOVERNANCE" ? "Participating in governance on"
+      : "Operating on";
+    const protocolNames = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
+    activityProfile = {
+      primaryActivity: `${resolvedType} operating on ${chainId} via ${resolvedProtocols.join(", ")}`,
+      strategies: protocolNames.length > 0 ? protocolNames.map(p => `${actionVerb} ${p}`) : ["Token transfers"],
+      protocolBreakdown: protocolNames.map(p => ({ protocol: p, percentage: Math.round(100 / Math.max(protocolNames.length, 1)), action: `${actionVerb} ${p}` })),
+      riskBehaviors: [],
+      successMetrics: `${(metrics.successRate * 100).toFixed(1)}% success rate over ${metrics.protocolsUsed.length} protocols`,
+    };
+  }
+
+  // Resolve behavioralNarrative: replace generic fallbacks with data-driven summary
+  const rawNarrative = (raw.behavioralNarrative as string | undefined) ?? "";
+  const GENERIC_NARRATIVE_PHRASES = ["mostly normal behavior", "minor anomalies", "behavioral analysis not available", "shows normal behavior", "no significant anomalies", "limited data", "insufficient data", "difficult to assess", "unable to determine", "not enough data", "making it difficult"];
+  const lowerNarrative = rawNarrative.toLowerCase();
+  const isGenericNarrative = !rawNarrative || rawNarrative.length < 40 || GENERIC_NARRATIVE_PHRASES.some(p => lowerNarrative.includes(p));
+  const behavioralNarrative = isGenericNarrative && metrics
+    ? `This ${resolvedType} has processed ${metrics.protocolsUsed.length > 0 ? metrics.protocolsUsed.join(", ") + " " : ""}transactions with a ${(metrics.successRate * 100).toFixed(1)}% success rate. Net flow: ${metrics.netFlowETH} ETH across ${metrics.uniqueCounterparties} counterparties.`
+    : (rawNarrative || "Behavioral analysis not available.");
 
   return {
     agentAddress: (raw.agentAddress as string | undefined) ?? address,
@@ -288,13 +399,26 @@ function normalizeVeniceResponse(
       behavioralConsistency: breakdown.behavioralConsistency,
     },
     flags,
-    summary: (raw.summary as string | undefined) ?? `Score: ${score}/100`,
+    summary: (() => {
+      const rawSummary = (raw.summary as string | undefined) ?? "";
+      const lowerSummary = rawSummary.toLowerCase();
+      const isGenericSummary = !rawSummary || rawSummary.length < 30 || GENERIC_NARRATIVE_PHRASES.some(p => lowerSummary.includes(p));
+      if (isGenericSummary && metrics) {
+        const protocols = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
+        return `${resolvedType} active on ${chainId} via ${protocols.length > 0 ? protocols.join(", ") : "various contracts"}. Success rate: ${(metrics.successRate * 100).toFixed(1)}%, net flow: ${metrics.netFlowETH} ETH, ${metrics.uniqueCounterparties} unique counterparties.`;
+      }
+      return rawSummary || `Score: ${score}/100`;
+    })(),
     recommendation: recommendation as "SAFE" | "CAUTION" | "BLOCKLIST",
     analysisTimestamp: (raw.analysisTimestamp as string | undefined) ?? new Date().toISOString(),
-    agentType: (raw.agentType as AgentType | undefined) ?? "UNKNOWN",
-    behavioralNarrative: (raw.behavioralNarrative as string | undefined) ?? "Behavioral analysis not available.",
+    agentType: finalAgentType,
+    behavioralNarrative,
     performanceScore: typeof raw.performanceScore === "number" ? raw.performanceScore : score,
-    operationalPattern: {
+    operationalPattern: metrics ? {
+      avgIntervalHours: metrics.txFrequencyPerDay > 0 ? +(24 / metrics.txFrequencyPerDay).toFixed(1) : 0,
+      peakHoursUTC: peakHourIndices ?? [],
+      consistencyScore: (opPattern?.consistencyScore as number | undefined) ?? 0,
+    } : {
       avgIntervalHours: (opPattern?.avgIntervalHours as number | undefined) ?? 0,
       peakHoursUTC: (opPattern?.peakHoursUTC as number[] | undefined) ?? [],
       consistencyScore: (opPattern?.consistencyScore as number | undefined) ?? 0,
@@ -310,6 +434,24 @@ function normalizeVeniceResponse(
     isLikelyHumanWallet: humanWallet,
     walletClassification: walletClass,
     activityProfile,
+    // Dossier enrichment
+    totalTransactions,
+    successRate: metrics?.successRate,
+    avgGasPerTx: metrics?.avgGasPerTx,
+    nonceGaps: metrics?.nonceGaps,
+    firstSeenTimestamp: metrics?.firstSeenTimestamp,
+    lastSeenTimestamp: metrics?.lastSeenTimestamp,
+    mostCalledContracts: metrics?.mostCalledContracts,
+    uniqueCounterparties: metrics?.uniqueCounterparties,
+    txFrequencyPerDay: metrics?.txFrequencyPerDay,
+    balanceTrend: (() => {
+      if (!coinBalanceHistory || coinBalanceHistory.length < 2) return "stable" as const;
+      const first = Number(coinBalanceHistory[0].value);
+      const last = Number(coinBalanceHistory[coinBalanceHistory.length - 1].value);
+      if (last > first * 1.1) return "accumulating" as const;
+      if (last < first * 0.9) return "depleting" as const;
+      return "stable" as const;
+    })(),
   };
 }
 
@@ -407,6 +549,26 @@ ENS: ${sanitizedData.addressInfo.ensName ?? "none"}
 Implementation: ${sanitizedData.addressInfo.implementationAddress ?? "N/A"}
 ` : "";
 
+  // Compute method frequency for Venice
+  const methodCounts = new Map<string, number>();
+  for (const tx of sanitizedData.transactions) {
+    const raw = tx.methodId?.toLowerCase().replace(/^0x/, "") ?? "";
+    const sel = raw.length >= 8 && raw !== "00000000" ? `0x${raw.slice(0, 8)}` : null;
+    if (sel) {
+      methodCounts.set(sel, (methodCounts.get(sel) ?? 0) + 1);
+    }
+  }
+  const sortedMethods = [...methodCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const totalMethodCalls = [...methodCounts.values()].reduce((s, v) => s + v, 0);
+  const methodFreqSection = sortedMethods.length > 0 ? `
+=== METHOD FREQUENCY (top methods by count) ===
+${sortedMethods.map(([sel, count]) => {
+    const pct = ((count / totalMethodCalls) * 100).toFixed(0);
+    const known = METHOD_REGISTRY[sel];
+    return `${sel}${known ? ` (${known.protocol} ${known.type})` : ""}: ${count} calls (${pct}%)`;
+  }).join("\n")}
+` : "";
+
   const userMessage = `Analyze this ${sanitizedData.chainId.toUpperCase()} chain agent:
 
 Address: ${sanitizedData.address}
@@ -414,15 +576,15 @@ Chain: ${sanitizedData.chainId}
 Transaction count: ${sanitizedData.transactions.length}
 Token transfer count: ${sanitizedData.tokenTransfers.length}
 Unique contracts called: ${new Set(sanitizedData.contractCalls.map((c) => c.contract)).size}
-${metricsSection}${walletSection}${groundTruthSection}${addressInfoSection}${contractSection}${balanceSection}${eventsSection}
-=== RECENT TRANSACTIONS (last 20) ===
-${JSON.stringify(sanitizedData.transactions.slice(-20), null, 2)}
+${metricsSection}${walletSection}${groundTruthSection}${methodFreqSection}${addressInfoSection}${contractSection}${balanceSection}${eventsSection}
+=== RECENT TRANSACTIONS (last 50) ===
+${JSON.stringify(sanitizedData.transactions.slice(-50), null, 2)}
 
-Token transfers (last 20):
-${JSON.stringify(sanitizedData.tokenTransfers.slice(-20), null, 2)}
+Token transfers (last 50):
+${JSON.stringify(sanitizedData.tokenTransfers.slice(-50), null, 2)}
 
-Contract interactions (last 20):
-${JSON.stringify(sanitizedData.contractCalls.slice(-20), null, 2)}`;
+Contract interactions (last 50):
+${JSON.stringify(sanitizedData.contractCalls.slice(-50), null, 2)}`;
 
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -440,7 +602,7 @@ ${JSON.stringify(sanitizedData.contractCalls.slice(-20), null, 2)}`;
         model: modelId,
         messages,
         temperature: 0.1,
-        max_tokens: 2000,
+        max_tokens: 4096,
         // @ts-expect-error venice_parameters not in OpenAI types
         venice_parameters: {
           enable_e2ee: true,
@@ -466,7 +628,7 @@ ${JSON.stringify(sanitizedData.contractCalls.slice(-20), null, 2)}`;
   } catch {
     throw new Error("Venice returned invalid JSON. Please try again.");
   }
-  const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId, data.computedMetrics);
+  const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId, data.computedMetrics, data.transactions.length, data.coinBalanceHistory);
 
   return normalized;
 }

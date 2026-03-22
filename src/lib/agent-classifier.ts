@@ -3,7 +3,15 @@ import type { AgentType, TransactionSummary, AddressInfo, WalletClassification }
 const ENTRY_POINT_V06 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789".toLowerCase();
 const ENTRY_POINT_V07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032".toLowerCase();
 
-const METHOD_REGISTRY: Record<string, { type: AgentType; protocol: string }> = {
+/** Normalize a method selector to 0x-prefixed 10-char form (e.g. "0xa9059cbb") */
+function normalizeSelector(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const lower = raw.toLowerCase().replace(/^0x/, "");
+  if (lower.length < 8 || lower === "00000000") return undefined;
+  return `0x${lower.slice(0, 8)}`;
+}
+
+export const METHOD_REGISTRY: Record<string, { type: AgentType; protocol: string }> = {
   // ERC-20
   "0xa9059cbb": { type: "DEX_TRADER", protocol: "ERC20" },
   "0x095ea7b3": { type: "DEX_TRADER", protocol: "ERC20" },
@@ -34,6 +42,8 @@ const METHOD_REGISTRY: Record<string, { type: AgentType; protocol: string }> = {
   // Chainlink
   "0x4c26a0b6": { type: "ORACLE", protocol: "Chainlink" },
   "0x50d25bcd": { type: "ORACLE", protocol: "Chainlink" },
+  "0xb1dc65a4": { type: "KEEPER", protocol: "Chainlink" }, // transmit (OCR2)
+  "0xc9807539": { type: "ORACLE", protocol: "Chainlink" }, // transmit (OCR1)
   // Chainlink Automation / Gelato
   "0x1e83409a": { type: "KEEPER", protocol: "Chainlink Automation" },
   "0x4585e33b": { type: "KEEPER", protocol: "Chainlink Automation" },
@@ -43,17 +53,79 @@ const METHOD_REGISTRY: Record<string, { type: AgentType; protocol: string }> = {
   "0x765e827f": { type: "KEEPER", protocol: "ERC-4337 EntryPoint" },
   // Bridge
   "0x0f5287b0": { type: "BRIDGE_RELAYER", protocol: "Bridge" },
+  // CoW Protocol (Gnosis) — settle + setPreSignature
+  "0xaa6e8bd0": { type: "DEX_TRADER", protocol: "CoW Protocol" },
+  "0xec6cb13f": { type: "DEX_TRADER", protocol: "CoW Protocol" },
+  // Balancer
+  "0x52bbbe29": { type: "DEX_TRADER", protocol: "Balancer" },
+  "0x945bcec9": { type: "DEX_TRADER", protocol: "Balancer" },
+  // Curve
+  "0x3df02124": { type: "DEX_TRADER", protocol: "Curve" },
+  "0xa6417ed6": { type: "DEX_TRADER", protocol: "Curve" },
+  // Lido
+  "0xa1903eab": { type: "YIELD_OPTIMIZER", protocol: "Lido" },
+  "0xf638e5e0": { type: "YIELD_OPTIMIZER", protocol: "Lido" },
+  // Omen / Conditional Tokens — buy + redeemPositions
+  "0xd6febde8": { type: "GOVERNANCE", protocol: "Omen" },
+  "0xcecf2242": { type: "GOVERNANCE", protocol: "Omen" },
+  // Olas AgentMech — request(bytes)
+  "0xb94207d3": { type: "KEEPER", protocol: "Olas Mech" },
 };
 
 export function classifyAgentType(txs: readonly TransactionSummary[]): AgentType {
   const counts: Partial<Record<AgentType, number>> = {};
   for (const tx of txs) {
-    const sel = tx.methodId?.slice(0, 10).toLowerCase();
+    const sel = normalizeSelector(tx.methodId);
     const match = sel ? METHOD_REGISTRY[sel] : undefined;
     if (match) counts[match.type] = (counts[match.type] ?? 0) + 1;
   }
-  if (!Object.keys(counts).length) return "UNKNOWN";
-  return (Object.entries(counts) as [AgentType, number][]).sort((a, b) => b[1] - a[1])[0][0];
+  if (Object.keys(counts).length) {
+    return (Object.entries(counts) as [AgentType, number][]).sort((a, b) => b[1] - a[1])[0][0];
+  }
+
+  // Behavioral inference when no METHOD_REGISTRY matches
+  if (txs.length < 3) return "UNKNOWN";
+
+  const zeroValueRate = txs.filter(tx => tx.value === "0" || tx.value === "").length / txs.length;
+  const timestamps = txs.map(tx => tx.timestamp).sort((a, b) => a - b);
+  const intervals: number[] = [];
+  for (let i = 1; i < timestamps.length; i++) {
+    intervals.push(timestamps[i] - timestamps[i - 1]);
+  }
+  const meanInterval = intervals.length > 0 ? intervals.reduce((s, v) => s + v, 0) / intervals.length : 0;
+  const cv = meanInterval > 0
+    ? Math.sqrt(intervals.reduce((s, v) => s + (v - meanInterval) ** 2, 0) / intervals.length) / meanInterval
+    : 0;
+
+  // High zero-value tx rate + regular intervals → KEEPER
+  if (zeroValueRate > 0.7 && cv < 0.5) return "KEEPER";
+
+  // Mostly interacts with a single counterparty (contract) → likely automated trader
+  const counterpartyCounts = new Map<string, number>();
+  for (const tx of txs) {
+    if (tx.to) {
+      const key = tx.to.toLowerCase();
+      counterpartyCounts.set(key, (counterpartyCounts.get(key) ?? 0) + 1);
+    }
+  }
+  const topCounterpartyRate = counterpartyCounts.size > 0
+    ? Math.max(...counterpartyCounts.values()) / txs.length
+    : 0;
+  // High method concentration + single target = bot trading pattern
+  const methodCounts = new Map<string, number>();
+  for (const tx of txs) {
+    const m = normalizeSelector(tx.methodId) ?? "0x";
+    methodCounts.set(m, (methodCounts.get(m) ?? 0) + 1);
+  }
+  const topMethodRate = methodCounts.size > 0 ? Math.max(...methodCounts.values()) / txs.length : 0;
+  if (topMethodRate > 0.6 && topCounterpartyRate > 0.4) return "DEX_TRADER";
+
+  // High failed tx rate → MEV_BOT (frontrunners fail often)
+  const failedCount = txs.filter(tx => tx.success !== undefined && !tx.success).length;
+  const failedRate = txs.length > 0 ? failedCount / txs.length : 0;
+  if (failedRate > 0.3) return "MEV_BOT";
+
+  return "UNKNOWN";
 }
 
 export function detectERC4337(txs: readonly TransactionSummary[]): boolean {
@@ -69,7 +141,7 @@ export function detectERC4337(txs: readonly TransactionSummary[]): boolean {
 export function inferProtocols(txs: readonly TransactionSummary[]): string[] {
   const protocols = new Set<string>();
   for (const tx of txs) {
-    const sel = tx.methodId?.slice(0, 10).toLowerCase();
+    const sel = normalizeSelector(tx.methodId);
     const match = sel ? METHOD_REGISTRY[sel] : undefined;
     if (match) protocols.add(match.protocol);
   }
@@ -137,7 +209,7 @@ function applyMethodConcentration(
 ): number {
   const methodCounts = new Map<string, number>();
   for (const tx of txs) {
-    const m = tx.methodId?.slice(0, 10).toLowerCase() ?? "0x";
+    const m = normalizeSelector(tx.methodId) ?? "0x";
     methodCounts.set(m, (methodCounts.get(m) ?? 0) + 1);
   }
   const topMethodPct = Math.max(...methodCounts.values()) / txs.length;
@@ -186,7 +258,7 @@ function applyHourEntropy(
 ): number {
   const hourCounts = new Array(24).fill(0) as number[];
   for (const tx of txs) {
-    hourCounts[new Date(tx.timestamp * 1000).getUTCHours()]++;
+    hourCounts[new Date(tx.timestamp).getUTCHours()]++;
   }
   const activeHours = hourCounts.filter(c => c > 0).length;
 
