@@ -11,7 +11,7 @@ Forensic trust intelligence for autonomous agents operating across EVM chains. A
 
 ## Live Demo
 
-**[agent-auditor.vercel.app](https://agent-auditor.vercel.app)**
+**[agent-auditor-two.vercel.app](https://agent-auditor-two.vercel.app)**
 
 Paste any agent address, ERC-8004 Agent ID, or agent name. Select a chain (or scan all 6). Get a trust score in seconds.
 
