@@ -13,6 +13,47 @@ export function createTelegramBot(token: string) {
   const bot = new Bot(token);
   const alertChannelId = process.env.TELEGRAM_CHANNEL_ID ?? "";
 
+  // /start — welcome message
+  bot.command("start", async (ctx: Context) => {
+    await ctx.reply(
+      `*Welcome to AgentAuditor* 🛡️\n\n` +
+      `I analyze on-chain AI agents and score their trustworthiness using transaction history, behavioral patterns, and AI analysis.\n\n` +
+      `*Commands:*\n` +
+      `/audit <input> [chain] — Analyze an agent\n` +
+      `/status — Check if the scanner is running\n` +
+      `/help — Show usage examples\n\n` +
+      `*Smart input — I accept:*\n` +
+      `• Address: \`/audit 0x1234...abcd\`\n` +
+      `• Agent ID: \`/audit 42\`\n` +
+      `• Name: \`/audit AgentName\`\n\n` +
+      `*Supported chains:* Base, Gnosis, Ethereum, Arbitrum, Optimism, Polygon`,
+      { parse_mode: "Markdown" },
+    );
+  });
+
+  // /help — detailed usage
+  bot.command("help", async (ctx: Context) => {
+    await ctx.reply(
+      `*How to use AgentAuditor*\n\n` +
+      `*Audit by address:*\n` +
+      `\`/audit 0x1234...abcd\` — scans all chains\n` +
+      `\`/audit 0x1234...abcd base\` — scans Base only\n\n` +
+      `*Audit by Agent ID (ERC-8004):*\n` +
+      `\`/audit 42\` — looks up agent #42\n` +
+      `\`/audit 42 gnosis\` — on Gnosis only\n\n` +
+      `*Audit by name:*\n` +
+      `\`/audit AgentName\` — searches registered agents\n\n` +
+      `*Result includes:*\n` +
+      `• Trust score (0-100)\n` +
+      `• Recommendation: SAFE / CAUTION / BLOCKLIST\n` +
+      `• Risk flags with severity\n` +
+      `• Chain identification\n\n` +
+      `*Autonomous alerts:*\n` +
+      `This bot also monitors all chains for new agents and sends alerts when risky ones are detected.`,
+      { parse_mode: "Markdown" },
+    );
+  });
+
   // /audit <input> [chain]
   bot.command("audit", async (ctx: Context) => {
     const text = ctx.message?.text ?? "";
@@ -77,6 +118,13 @@ export function createTelegramBot(token: string) {
       console.error("[telegram] Failed to send alert:", err);
     }
   }
+
+  // Register command menu with Telegram
+  bot.api.setMyCommands([
+    { command: "audit", description: "Analyze an on-chain AI agent" },
+    { command: "status", description: "Check scanner status" },
+    { command: "help", description: "Usage examples and supported chains" },
+  ]).catch((err) => console.warn("[telegram] Failed to set commands:", err));
 
   return { bot, sendAlert };
 }

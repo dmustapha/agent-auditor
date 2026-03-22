@@ -6,6 +6,7 @@ import type {
   DiscoveredAgent,
 } from "./types";
 import { getChainConfig, getPublicClient } from "./chains";
+import { sanitizeHtml } from "./sanitize";
 
 // ─── ABI Fragments ───────────────────────────────────────────────────────────
 
@@ -153,7 +154,7 @@ export async function getAgentIdentity(
   ]);
 
   // Try to read common metadata keys
-  let metadata: Record<string, string> = {};
+  const metadata: Record<string, string> = {};
   try {
     const name = await client.readContract({
       address: registry,
@@ -161,7 +162,7 @@ export async function getAgentIdentity(
       functionName: "getMetadata",
       args: [agentId, "name"],
     }) as string;
-    if (name) metadata["name"] = name;
+    if (name) metadata["name"] = sanitizeHtml(name);
   } catch {
     // metadata key may not exist — not an error
   }
@@ -170,7 +171,9 @@ export async function getAgentIdentity(
     agentId,
     owner,
     tokenURI,
-    metadata,
+    metadata: Object.fromEntries(
+      Object.entries(metadata).map(([k, v]) => [k, sanitizeHtml(String(v))])
+    ),
     wallet,
     registrationBlock: 0n, // populated by discovery functions
   };

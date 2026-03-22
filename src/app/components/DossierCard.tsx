@@ -82,8 +82,11 @@ export function DossierCard({ agent, index, onSelect }: DossierCardProps) {
   const chevronRef = useRef<HTMLSpanElement>(null);
   const [expanded, setExpanded] = useState(false);
   const animatingRef = useRef(false);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
     const el = cardRef.current;
     if (!el) return;
     el.animate(

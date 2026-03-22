@@ -1,4 +1,4 @@
-import { createWalletClient, http, toHex } from "viem";
+import { createWalletClient, http, keccak256, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { ChainId, TrustScore, AttestationResult } from "./types";
 import { getChainConfig, getViemChain, getPublicClient } from "./chains";
@@ -27,20 +27,31 @@ const AGENT_BLOCKLIST_ABI = [
   },
 ] as const;
 
-// ─── Wallet Client Factory ───────────────────────────────────────────────────
+// ─── Wallet Client Factory (cached at module level) ─────────────────────────
+
+let cachedAccount: ReturnType<typeof privateKeyToAccount> | null = null;
+const walletClientCache = new Map<ChainId, ReturnType<typeof createWalletClient>>();
+
+function getAccount() {
+  if (cachedAccount) return cachedAccount;
+  const pk = process.env.PRIVATE_KEY;
+  if (!pk) throw new Error("PRIVATE_KEY env var required for attestation writes");
+  cachedAccount = privateKeyToAccount(pk as `0x${string}`);
+  return cachedAccount;
+}
 
 function getWalletClient(chainId: ChainId) {
-  const privateKey = process.env.PRIVATE_KEY;
-  if (!privateKey) throw new Error("PRIVATE_KEY env var required for attestation writes");
+  const existing = walletClientCache.get(chainId);
+  if (existing) return existing;
 
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
   const config = getChainConfig(chainId);
-
-  return createWalletClient({
-    account,
+  const client = createWalletClient({
+    account: getAccount(),
     chain: getViemChain(chainId),
     transport: http(config.rpcUrl),
   });
+  walletClientCache.set(chainId, client);
+  return client;
 }
 
 // ─── Publish Attestation ─────────────────────────────────────────────────────
@@ -62,12 +73,13 @@ export async function publishAttestation(
     timestamp: trustScore.analysisTimestamp,
   });
 
-  const feedbackHash = toHex(
-    BigInt(new TextEncoder().encode(feedbackURI).reduce((h, b) => ((h << 5) - h + b) | 0, 0) >>> 0),
-    { size: 32 },
-  );
+  const feedbackHash = keccak256(toHex(feedbackURI));
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://agentauditor.vercel.app";
 
   const txHash = await wallet.writeContract({
+    account: getAccount(),
+    chain: getViemChain(chainId),
     address: config.erc8004.reputationRegistry,
     abi: REPUTATION_REGISTRY_ABI,
     functionName: "giveFeedback",
@@ -77,7 +89,7 @@ export async function publishAttestation(
       decimals,
       tag1,
       tag2,
-      "https://agentauditor.xyz",   // endpoint
+      appUrl,
       feedbackURI,
       feedbackHash,
     ],
@@ -103,10 +115,7 @@ export async function verifyAttestation(
       args: [agentId],
     }) as readonly string[];
 
-    // Check if our address is in the clients list
-    const privateKey = process.env.PRIVATE_KEY;
-    if (!privateKey) return false;
-    const account = privateKeyToAccount(privateKey as `0x${string}`);
+    const account = getAccount();
     return clients.some((c) => c.toLowerCase() === account.address.toLowerCase());
   } catch {
     return false;
@@ -139,6 +148,8 @@ export async function addToBlocklist(
   }
 
   const txHash = await wallet.writeContract({
+    account: getAccount(),
+    chain: getViemChain("base"),
     address: blocklistAddress as `0x${string}`,
     abi: AGENT_BLOCKLIST_ABI,
     functionName: "blockAgent",

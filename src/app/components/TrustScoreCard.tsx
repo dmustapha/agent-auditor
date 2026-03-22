@@ -114,6 +114,33 @@ function txSizeLabel(ethValue: number): string {
   return "Whale-sized";
 }
 
+function formatGasUI(gas: number): string {
+  if (gas >= 1_000_000) return `${(gas / 1_000_000).toFixed(1)}M`;
+  if (gas >= 1_000) return `${(gas / 1_000).toFixed(1)}k`;
+  return `${Math.round(gas)}`;
+}
+
+function relativeTimeUI(timestampMs: number): string {
+  const diff = Date.now() - timestampMs;
+  const hours = Math.floor(diff / 3_600_000);
+  if (hours < 1) return "< 1hr ago";
+  if (hours < 24) return `${hours}hr ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
+
+function ageDaysUI(firstMs: number, lastMs: number): number {
+  return Math.max(1, Math.round((lastMs - firstMs) / 86_400_000));
+}
+
+const TREND_META = {
+  accumulating: { icon: "\u2197", color: "#22c55e", label: "Accumulating" },
+  depleting: { icon: "\u2198", color: "#ef4444", label: "Depleting" },
+  stable: { icon: "\u2192", color: "var(--color-text-dim)", label: "Stable" },
+} as const;
+
 // ─── WAAPI Helpers ────────────────────────────────────────────────────────────
 
 const SPRING_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
@@ -478,6 +505,7 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
   const narrativeReveal = useScrollReveal([revealKey]);
   const financialReveal = useScrollReveal([revealKey]);
   const operationalReveal = useScrollReveal([revealKey]);
+  const networkReveal = useScrollReveal([revealKey]);
   const protocolsReveal = useScrollReveal([revealKey]);
   const anomaliesReveal = useScrollReveal([revealKey]);
   const funFactReveal = useScrollReveal([revealKey]);
@@ -551,6 +579,74 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
                     {protocol}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {/* Line 4: Identity stats grid */}
+            {(score.totalTransactions != null || score.firstSeenTimestamp != null) && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+                  gap: "0.5rem",
+                  marginTop: "0.6rem",
+                  padding: "0.5rem 0.6rem",
+                  borderRadius: "0.5rem",
+                  background: "var(--color-surface)",
+                  border: "1px solid var(--color-border)",
+                }}
+                aria-label="Wallet identity stats"
+              >
+                {score.firstSeenTimestamp != null && score.lastSeenTimestamp != null && (
+                  <div>
+                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Age</span>
+                    <span style={{ fontSize: "0.85rem", fontFamily: "var(--font-mono)", color: "var(--color-text-muted)" }}>
+                      {ageDaysUI(score.firstSeenTimestamp, score.lastSeenTimestamp)}d
+                    </span>
+                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block" }}>
+                      Since {new Date(score.firstSeenTimestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                  </div>
+                )}
+                {score.totalTransactions != null && (
+                  <div>
+                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Transactions</span>
+                    <span style={{ fontSize: "0.85rem", fontFamily: "var(--font-mono)", color: "var(--color-text-muted)" }}>
+                      {score.totalTransactions.toLocaleString()}
+                    </span>
+                    {score.txFrequencyPerDay != null && (
+                      <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block" }}>
+                        {score.txFrequencyPerDay.toFixed(1)}/day avg
+                      </span>
+                    )}
+                  </div>
+                )}
+                {score.lastSeenTimestamp != null && (
+                  <div>
+                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Last Active</span>
+                    <span style={{ fontSize: "0.85rem", fontFamily: "var(--font-mono)", color: "var(--color-text-muted)" }}>
+                      {relativeTimeUI(score.lastSeenTimestamp)}
+                    </span>
+                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block" }}>
+                      {new Date(score.lastSeenTimestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                )}
+                {score.successRate != null && (
+                  <div>
+                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Success Rate</span>
+                    <span style={{
+                      fontSize: "0.85rem",
+                      fontFamily: "var(--font-mono)",
+                      color: score.successRate >= 0.9 ? "#22c55e" : score.successRate >= 0.7 ? "#eab308" : "#ef4444",
+                    }}>
+                      {(score.successRate * 100).toFixed(1)}%
+                    </span>
+                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block" }}>
+                      {score.successRate >= 0.95 ? "Excellent" : score.successRate >= 0.85 ? "Good" : score.successRate >= 0.7 ? "Fair" : "Poor"}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -786,6 +882,31 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
               </span>
             )}
           </div>
+          {score.balanceTrend && (() => {
+            const trend = TREND_META[score.balanceTrend];
+            const netVal = parseFloat(score.financialSummary.netFlowETH || "0");
+            return (
+              <div className="aa-fin-item">
+                <span className="aa-fin-label">Balance Trend</span>
+                <span className="aa-fin-value" style={{ color: trend.color, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "1.4rem" }}>{trend.icon}</span>
+                  {trend.label}
+                </span>
+                <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.15rem" }}>
+                  {score.balanceTrend === "accumulating"
+                    ? `Growing — net +${Math.abs(netVal).toFixed(4)} ETH inflow`
+                    : score.balanceTrend === "depleting"
+                    ? `Shrinking — net ${netVal.toFixed(4)} ETH outflow`
+                    : "Holding steady — balanced in/out flows"}
+                </span>
+                {score.avgGasPerTx != null && (
+                  <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
+                    Avg gas cost: {formatGasUI(score.avgGasPerTx)} gas/tx
+                  </span>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -824,6 +945,30 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
               })()}
             </div>
           </div>
+          {score.avgGasPerTx != null && (
+            <div className="aa-op-item">
+              <span className="aa-op-label">Gas/Tx</span>
+              <span className="aa-op-value">{formatGasUI(score.avgGasPerTx)}</span>
+              <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
+                {score.avgGasPerTx < 50_000 ? "Simple transfers"
+                  : score.avgGasPerTx < 150_000 ? "Standard DeFi ops"
+                  : score.avgGasPerTx < 500_000 ? "Complex interactions"
+                  : "Heavy computation"}
+              </span>
+            </div>
+          )}
+          {score.txFrequencyPerDay != null && (
+            <div className="aa-op-item">
+              <span className="aa-op-label">Tx/Day</span>
+              <span className="aa-op-value">{score.txFrequencyPerDay.toFixed(1)}</span>
+              <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
+                {score.txFrequencyPerDay < 1 ? "Infrequent operator"
+                  : score.txFrequencyPerDay < 5 ? "Moderate activity"
+                  : score.txFrequencyPerDay < 20 ? "Active operator"
+                  : "High-frequency bot"}
+              </span>
+            </div>
+          )}
         </div>
         <div className="aa-heatmap-wrap">
           <p className="aa-heatmap-label">24h Activity Map (UTC)</p>
@@ -835,6 +980,96 @@ export function TrustScoreCard({ score, badge }: TrustScoreCardProps) {
           </div>
         </div>
       </div>
+
+      {/* ── Network & Counterparties ── */}
+      {(score.uniqueCounterparties != null || (score.nonceGaps != null && score.nonceGaps > 0) || (score.mostCalledContracts && score.mostCalledContracts.length > 0)) && (
+        <div ref={networkReveal} className="aa-operational-panel" aria-label="Network analysis">
+          <p className="aa-section-heading">Network & Counterparties</p>
+          <div className="aa-operational-grid">
+            {score.uniqueCounterparties != null && (
+              <div className="aa-op-item">
+                <span className="aa-op-label">Unique Counterparties</span>
+                <span className="aa-op-value">{score.uniqueCounterparties.toLocaleString()}</span>
+                <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
+                  {score.uniqueCounterparties <= 3 ? "Narrow network — few contracts"
+                    : score.uniqueCounterparties <= 10 ? "Focused operator — targeted contracts"
+                    : score.uniqueCounterparties <= 30 ? "Diverse network — multi-protocol"
+                    : "Wide reach — interacts broadly"}
+                </span>
+              </div>
+            )}
+            {score.nonceGaps != null && score.nonceGaps > 0 && (
+              <div className="aa-op-item">
+                <span className="aa-op-label">Nonce Gaps</span>
+                <span className="aa-op-value" style={{ color: "#eab308" }}>{score.nonceGaps}</span>
+                <span style={{ fontSize: "0.65rem", color: "#eab308", display: "block", marginTop: "0.1rem" }}>
+                  {score.nonceGaps === 1 ? "Minor gap — likely a dropped tx"
+                    : score.nonceGaps <= 3 ? "Some gaps — possible tx replacements"
+                    : "Multiple gaps — unusual, may indicate MEV or tx manipulation"}
+                </span>
+              </div>
+            )}
+            {score.nonceGaps != null && score.nonceGaps === 0 && (
+              <div className="aa-op-item">
+                <span className="aa-op-label">Nonce Gaps</span>
+                <span className="aa-op-value" style={{ color: "#22c55e" }}>0</span>
+                <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
+                  Clean sequence — no dropped transactions
+                </span>
+              </div>
+            )}
+          </div>
+          {score.mostCalledContracts && score.mostCalledContracts.length > 0 && (
+            <div style={{ marginTop: "0.75rem" }}>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", display: "block", marginBottom: "0.4rem", fontWeight: 500 }}>
+                Most Frequented Contracts
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                {score.mostCalledContracts.slice(0, 5).map((addr, i) => (
+                  <div
+                    key={addr}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      padding: "0.35rem 0.5rem",
+                      borderRadius: "0.4rem",
+                      background: i === 0 ? "rgba(144, 112, 212, 0.08)" : "var(--color-surface)",
+                      border: `1px solid ${i === 0 ? "rgba(144, 112, 212, 0.2)" : "var(--color-border)"}`,
+                    }}
+                  >
+                    <span style={{
+                      fontSize: "0.6rem",
+                      color: "var(--color-text-dim)",
+                      width: "1.2rem",
+                      textAlign: "center",
+                      flexShrink: 0,
+                    }}>
+                      #{i + 1}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "0.7rem",
+                        fontFamily: "var(--font-mono)",
+                        color: "var(--color-text-muted)",
+                        flex: 1,
+                      }}
+                      title={addr}
+                    >
+                      {addr.slice(0, 10)}...{addr.slice(-6)}
+                    </span>
+                    {i === 0 && (
+                      <span style={{ fontSize: "0.55rem", color: "#9070d4", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Primary
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Protocol Fingerprint ── */}
       {score.protocolsUsed.length > 0 && (
