@@ -164,7 +164,7 @@ export function DossierCard({ agent, index, onSelect }: DossierCardProps) {
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpand(); } }}
         aria-expanded={expanded}
-        aria-label={`${agent.name} — score ${agent.score}`}
+        aria-label={`${agent.name}, score ${agent.score}`}
       >
         <ScoreRing score={agent.score} />
 

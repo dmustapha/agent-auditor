@@ -120,7 +120,7 @@ export function AgentDirectory({
       </div>
 
       {error && (
-        <p className="aa-directory-warning">Live discovery unavailable — showing cached agents</p>
+        <p className="aa-directory-warning">Live discovery unavailable. Showing cached agents.</p>
       )}
 
       {/* Dossier List */}

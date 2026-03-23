@@ -457,7 +457,7 @@ function Home() {
             {/* ─── HERO (always rendered, collapses via CSS class) ─── */}
             <section
               className={`aa-hero${showHero ? '' : ' aa-hero--collapsed'}`}
-              aria-label="Agent Auditor — forensic trust analysis"
+              aria-label="Agent Auditor: forensic trust analysis"
             >
               <p className="aa-hero-kicker">Forensic Trust Analysis</p>
               <h1 className="aa-hero-title">
@@ -465,7 +465,7 @@ function Home() {
                 <em>before you trust it.</em>
               </h1>
               <p className="aa-hero-subtitle">
-                Real-time onchain trust scoring across EVM chains. Transaction patterns, fund flows, contract interactions — distilled into one authoritative score.
+                Real-time onchain trust scoring across EVM chains. Transaction patterns, fund flows, and contract interactions distilled into one authoritative score.
               </p>
 
               <div className="aa-hero-stats" aria-label="Platform statistics">

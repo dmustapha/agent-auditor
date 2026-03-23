@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_SITE_URL ?? "https://agent-auditor.vercel.app"
   ),
-  title: "AgentAuditor — Trust Scores for AI Agents",
+  title: "AgentAuditor: Trust Scores for AI Agents",
   description: "Autonomous trust evaluation for AI agents across EVM chains",
   icons: {
     icon: [
@@ -30,14 +30,14 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png",
   },
   openGraph: {
-    title: "AgentAuditor — Trust Scores for AI Agents",
+    title: "AgentAuditor: Trust Scores for AI Agents",
     description: "Real-time onchain trust scoring for AI agents across EVM chains.",
     type: "website",
     images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "AgentAuditor" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "AgentAuditor — Trust Scores for AI Agents",
+    title: "AgentAuditor: Trust Scores for AI Agents",
     description: "Real-time onchain trust scoring for AI agents across EVM chains.",
     images: ["/og-image.png"],
   },

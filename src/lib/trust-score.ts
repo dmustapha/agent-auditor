@@ -207,7 +207,7 @@ export function formatForTelegram(score: TrustScore, ensName?: string | null): s
 *${displayName}*${typeBadge} on *${chainConfig.name}*
 ${identityParts.length > 0 ? identityParts.join(" | ") : ""}
 
-*TRUST SCORE: ${score.overallScore}/100 — ${score.recommendation}*
+*TRUST SCORE: ${score.overallScore}/100 | ${score.recommendation}*
 \`${bar}\`
 
 *Breakdown:*

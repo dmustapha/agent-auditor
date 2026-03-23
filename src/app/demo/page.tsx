@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "AgentAuditor Demo",
-  description: "Demo video for AgentAuditor — real-time trust scoring for onchain AI agents",
+  description: "Demo video for AgentAuditor. Real-time trust scoring for onchain AI agents.",
 };
 
 export default function DemoPage() {

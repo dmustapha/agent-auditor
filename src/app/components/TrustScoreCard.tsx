@@ -407,7 +407,7 @@ function ActivityHeatmap({ peakHours }: { peakHours: readonly number[] }) {
         <div
           key={h}
           className={`aa-heatmap-cell${peakSet.has(h) ? " aa-heatmap-cell--peak" : ""}`}
-          title={`${String(h).padStart(2, "0")}:00 UTC${peakSet.has(h) ? " — peak" : ""}`}
+          title={`${String(h).padStart(2, "0")}:00 UTC${peakSet.has(h) ? " (peak)" : ""}`}
         />
       ))}
     </div>
@@ -945,10 +945,10 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
                 </span>
                 <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.15rem" }}>
                   {score.balanceTrend === "accumulating"
-                    ? `Growing — net +${Math.abs(netVal).toFixed(4)} ETH inflow`
+                    ? `Growing: net +${Math.abs(netVal).toFixed(4)} ETH inflow`
                     : score.balanceTrend === "depleting"
-                    ? `Shrinking — net ${netVal.toFixed(4)} ETH outflow`
-                    : "Holding steady — balanced in/out flows"}
+                    ? `Shrinking: net ${netVal.toFixed(4)} ETH outflow`
+                    : "Holding steady, balanced in/out flows"}
                 </span>
                 {score.avgGasPerTx != null && (
                   <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
@@ -1042,10 +1042,10 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
                 <span className="aa-op-label">Unique Counterparties</span>
                 <span className="aa-op-value">{score.uniqueCounterparties.toLocaleString()}</span>
                 <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
-                  {score.uniqueCounterparties <= 3 ? "Narrow network — few contracts"
-                    : score.uniqueCounterparties <= 10 ? "Focused operator — targeted contracts"
-                    : score.uniqueCounterparties <= 30 ? "Diverse network — multi-protocol"
-                    : "Wide reach — interacts broadly"}
+                  {score.uniqueCounterparties <= 3 ? "Narrow network, few contracts"
+                    : score.uniqueCounterparties <= 10 ? "Focused operator, targeted contracts"
+                    : score.uniqueCounterparties <= 30 ? "Diverse network, multi-protocol"
+                    : "Wide reach, interacts broadly"}
                 </span>
               </div>
             )}
@@ -1054,9 +1054,9 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
                 <span className="aa-op-label">Nonce Gaps</span>
                 <span className="aa-op-value" style={{ color: "#eab308" }}>{score.nonceGaps}</span>
                 <span style={{ fontSize: "0.65rem", color: "#eab308", display: "block", marginTop: "0.1rem" }}>
-                  {score.nonceGaps === 1 ? "Minor gap — likely a dropped tx"
-                    : score.nonceGaps <= 3 ? "Some gaps — possible tx replacements"
-                    : "Multiple gaps — unusual, may indicate MEV or tx manipulation"}
+                  {score.nonceGaps === 1 ? "Minor gap, likely a dropped tx"
+                    : score.nonceGaps <= 3 ? "Some gaps, possible tx replacements"
+                    : "Multiple gaps: unusual, may indicate MEV or tx manipulation"}
                 </span>
               </div>
             )}
@@ -1065,7 +1065,7 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
                 <span className="aa-op-label">Nonce Gaps</span>
                 <span className="aa-op-value" style={{ color: "#22c55e" }}>0</span>
                 <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
-                  Clean sequence — no dropped transactions
+                  Clean sequence, no dropped transactions
                 </span>
               </div>
             )}
@@ -1229,7 +1229,7 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
       {/* ── Risk Flags ── */}
       {score.flags.length > 0 && (
         <div className={`aa-flags-section aa-reveal aa-delay-4${r}`} aria-label="Risk flags">
-          <p className="aa-flags-label">Risk Signals — {score.flags.length} detected</p>
+          <p className="aa-flags-label">Risk Signals: {score.flags.length} detected</p>
           <div className="aa-flags-list" role="list">
             {score.flags.map((flag, i) => (
               <div key={i} className="aa-reveal" style={{ transitionDelay: `${i * 60}ms` }}>

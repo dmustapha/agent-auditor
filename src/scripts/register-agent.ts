@@ -20,7 +20,7 @@ async function main() {
   const agentJson = {
     type: "auditor",
     name: "AgentAuditor",
-    description: "Autonomous trust evaluation agent for EVM chain AI agents — monitors Base, Gnosis, Ethereum, Arbitrum, Optimism, Polygon",
+    description: "Autonomous trust evaluation agent for EVM chain AI agents. Monitors Base, Gnosis, Ethereum, Arbitrum, Optimism, Polygon.",
     services: ["audit", "blocklist", "trust-score"],
     supportedChains: ["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon"],
     supportedTrust: ["trustScore/overall", "trustScore/security", "trustScore/reliability", "trustScore/quality"],

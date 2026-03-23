@@ -143,7 +143,7 @@ export function LandingPage({ onLaunch, agentCount }: LandingPageProps) {
             transition={{ delay: kickerDoneDelay + 0.15, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
           >
             Real-time onchain trust scoring across EVM chains. Transaction patterns,
-            fund flows, contract interactions — distilled into one authoritative score.
+            fund flows, and contract interactions distilled into one authoritative score.
           </motion.p>
 
           <motion.div
@@ -294,8 +294,8 @@ export function LandingPage({ onLaunch, agentCount }: LandingPageProps) {
             <div className="aa-feature-label">Detection</div>
             <div className="aa-feature-title">Agent Classification</div>
             <p className="aa-feature-desc">
-              Automatically identify agent types — keepers, oracles, bridge relayers, liquidators,
-              MEV bots, and more — using onchain behavioral signatures.
+              Automatically identify agent types: keepers, oracles, bridge relayers, liquidators,
+              MEV bots, and more. Classification uses onchain behavioral signatures.
             </p>
           </div>
           <div className="aa-feature-card aa-stagger-child">
