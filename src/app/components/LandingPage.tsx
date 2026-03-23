@@ -117,7 +117,10 @@ export function LandingPage({ onLaunch, agentCount }: LandingPageProps) {
           <div className="aa-hero-sunburst-glow" />
         </div>
 
-        <div className="aa-hero-logo">AgentAuditor</div>
+        <div className="aa-hero-logo">
+          <img src="/logo.png" alt="" width={72} height={72} className="aa-hero-logo-img" />
+          AgentAuditor
+        </div>
 
         <div className="aa-hero-content">
           <TypewriterKicker />

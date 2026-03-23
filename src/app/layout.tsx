@@ -22,7 +22,13 @@ export const metadata: Metadata = {
   ),
   title: "AgentAuditor — Trust Scores for AI Agents",
   description: "Autonomous trust evaluation for AI agents across EVM chains",
-  icons: { icon: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
   openGraph: {
     title: "AgentAuditor — Trust Scores for AI Agents",
     description: "Real-time onchain trust scoring for AI agents across EVM chains.",

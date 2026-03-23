@@ -17,8 +17,10 @@
     "grammy": "1.41.1",
     "next": "16.2.0",
     "openai": "6.32.0",
+    "pptxgenjs": "^4.0.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "tsx": "^4.21.0",
     "viem": "2.47.5"
   },
   "devDependencies": {

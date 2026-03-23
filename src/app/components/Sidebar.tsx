@@ -49,6 +49,7 @@ export function Sidebar({ activeItem = "dashboard", recentAudits, onSelectAudit,
   return (
     <aside className="aa-sidebar" role="navigation" aria-label="Primary navigation">
       <div className="aa-sidebar-logo">
+        <img src="/logo.png" alt="AgentAuditor" width={36} height={36} className="aa-sidebar-logo-img" />
         <div className="aa-wordmark">AgentAuditor</div>
         <div className="aa-tagline">Trust Intelligence</div>
       </div>
