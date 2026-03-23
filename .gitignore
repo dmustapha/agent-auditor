@@ -41,3 +41,4 @@ tasks/
 
 # Logs
 *.log
+.env*.local

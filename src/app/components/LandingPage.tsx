@@ -71,25 +71,38 @@ export function LandingPage({ onLaunch, agentCount }: LandingPageProps) {
   const kickerDoneDelay = (KICKER_DURATION + 100) / 1000;
 
   useEffect(() => {
+    const revealSection = (el: Element) => {
+      el.classList.add("revealed");
+      const children = el.querySelectorAll(".aa-stagger-child");
+      children.forEach((child, i) => {
+        (child as HTMLElement).style.transitionDelay = `${i * 100}ms`;
+        child.classList.add("revealed");
+      });
+    };
+
     observerRef.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            entry.target.classList.add("revealed");
-            const children = entry.target.querySelectorAll(".aa-stagger-child");
-            children.forEach((child, i) => {
-              (child as HTMLElement).style.transitionDelay = `${i * 100}ms`;
-              child.classList.add("revealed");
-            });
+            revealSection(entry.target);
             observerRef.current?.unobserve(entry.target);
           }
         });
       },
-      { threshold: 0.12, rootMargin: "-50px" }
+      { threshold: 0.05, rootMargin: "0px 0px -20px 0px" }
     );
 
     const sections = document.querySelectorAll(".aa-reveal-section");
-    sections.forEach((el) => observerRef.current?.observe(el));
+    sections.forEach((el) => {
+      // Immediately reveal if already in viewport (handles production hydration timing)
+      const rect = el.getBoundingClientRect();
+      const inViewport = rect.top < window.innerHeight && rect.bottom > 0;
+      if (inViewport) {
+        revealSection(el);
+      } else {
+        observerRef.current?.observe(el);
+      }
+    });
 
     return () => observerRef.current?.disconnect();
   }, []);
