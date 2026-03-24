@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { ChainId, InputType, AnalyzeRequest, AnalyzeResponse, AnalyzeErrorResponse } from "@/lib/types";
+import type { ChainId, InputType, AnalyzeRequest, AnalyzeResponse, AnalyzeErrorResponse, TransactionSummary } from "@/lib/types";
 import { detectInputType, resolveInput } from "@/lib/resolver";
 import { fetchAgentData, detectAllChainsWithActivity } from "@/lib/blockscout";
 import { getAgentIdentity, findAgentByAddress } from "@/lib/erc8004";
@@ -61,10 +61,39 @@ export async function POST(request: NextRequest) {
     try {
       resolved = await resolveInput(input, inputType, selectedChain);
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : `No agent found matching "${input}" on any supported chain.`;
+
+      // If searching a specific chain and it's an address, check if other chains have activity
+      if (selectedChain !== "all" && inputType === "address") {
+        try {
+          const otherChains = await detectAllChainsWithActivity(input.trim().toLowerCase());
+          const activeOnOther = otherChains.filter(c => c.chainId !== selectedChain && c.txCount > 0);
+          if (activeOnOther.length > 0) {
+            const chainNames = activeOnOther.map(c => c.chainId).join(", ");
+            return NextResponse.json(
+              {
+                error: "no_activity_on_chain",
+                message: `No transactions found for this address on ${selectedChain}.`,
+                suggestion: `Try scanning all chains — this address has activity on ${chainNames}.`,
+                activeChains: activeOnOther.map(c => c.chainId),
+              } satisfies AnalyzeErrorResponse,
+              { status: 404 },
+            );
+          }
+        } catch { /* chain detection failed — fall through to generic error */ }
+      }
+
+      // Generic no-activity error
+      const isNoActivity = errMsg.includes("No transaction activity") || errMsg.includes("No agent found");
       return NextResponse.json(
         {
-          error: "agent_not_found",
-          message: err instanceof Error ? err.message : `No agent found matching "${input}" on any supported chain.`,
+          error: isNoActivity ? "no_activity" : "agent_not_found",
+          message: isNoActivity
+            ? "This address has no transaction history on any supported chain."
+            : errMsg,
+          suggestion: isNoActivity
+            ? "Double-check the address or try a different agent."
+            : undefined,
         } satisfies AnalyzeErrorResponse,
         { status: 404 },
       );
@@ -77,12 +106,51 @@ export async function POST(request: NextRequest) {
     }
 
     // 2.5. Check cache
-    const cacheKey = `${resolved.address}:${resolved.chainId}`;
+    const cacheKey = selectedChain === "all"
+      ? `${resolved.address}:all`
+      : `${resolved.address}:${resolved.chainId}`;
     const cached = analysisCache.get(cacheKey);
     if (cached) return NextResponse.json(cached);
 
-    // 3. Fetch onchain data from resolved chain
-    const agentData = await fetchAgentData(resolved.chainId, resolved.address);
+    // 3. Fetch onchain data — multi-chain merge when chain=all
+    let agentData;
+    if (selectedChain === "all" && chainResults.length > 1) {
+      // Fetch from all active chains in parallel (allSettled so one flaky chain doesn't kill the request)
+      const allChainSettled = await Promise.allSettled(
+        chainResults.map(cr => fetchAgentData(cr.chainId as ChainId, resolved.address)),
+      );
+      const allChainData = allChainSettled
+        .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof fetchAgentData>>> => r.status === "fulfilled")
+        .map(r => r.value);
+      if (allChainData.length === 0) {
+        return NextResponse.json(
+          { error: "fetch_failed", message: "Failed to fetch transaction data from any chain." } satisfies AnalyzeErrorResponse,
+          { status: 502 },
+        );
+      }
+      // Merge: use primary chain's base data, combine transaction arrays
+      const primary = allChainData[0];
+      const mergedTransactions = allChainData.flatMap(d =>
+        d.transactions.map(tx => ({ ...tx, chainId: d.chainId } as TransactionSummary & { chainId: string })),
+      );
+      // Sort by timestamp descending
+      mergedTransactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      const mergedTokenTransfers = allChainData.flatMap(d => d.tokenTransfers);
+      const mergedContractCalls = allChainData.flatMap(d => d.contractCalls);
+      const mergedCoinBalance = allChainData.flatMap(d => d.coinBalanceHistory ?? []);
+
+      agentData = {
+        ...primary,
+        transactions: mergedTransactions,
+        tokenTransfers: mergedTokenTransfers,
+        contractCalls: mergedContractCalls,
+        coinBalanceHistory: mergedCoinBalance,
+        computedMetrics: primary.computedMetrics, // from primary chain only — behavioral profile below uses merged txs
+      };
+    } else {
+      const fetchChain = chainResults.length === 1 ? chainResults[0].chainId as ChainId : resolved.chainId;
+      agentData = await fetchAgentData(fetchChain, resolved.address);
+    }
     const ethPrice = await getETHPrice();
 
     // 3.5. Compute behavioral profile (local analysis, no new external APIs)

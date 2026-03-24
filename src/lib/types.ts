@@ -439,6 +439,8 @@ export interface AnalyzeResponse {
 export interface AnalyzeErrorResponse {
   readonly error: string;
   readonly message: string;
+  readonly suggestion?: string;
+  readonly activeChains?: readonly string[];
   readonly transactions?: readonly TransactionSummary[];
 }
 

@@ -153,7 +153,7 @@ const sidebarContainerVariants = {
 function Home() {
   const [view, setView] = useState<"landing" | "loading" | "dashboard">("landing");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; suggestion?: string } | null>(null);
   const [result, setResult] = useState<{
     trustScore: UITrustScore;
     transactions: TransactionSummary[];
@@ -250,7 +250,7 @@ function Home() {
 
       if (!res.ok) {
         const errBody: AnalyzeErrorResponse = await res.json();
-        setError(errBody.message);
+        setError({ message: errBody.message, suggestion: errBody.suggestion });
         return;
       }
 
@@ -297,7 +297,7 @@ function Home() {
       // Update URL permalink
       router.replace(`?address=${encodeURIComponent(uiScore.address)}&chain=${uiScore.chainId}`, { scroll: false });
     } catch {
-      setError("Failed to connect to analysis service");
+      setError({ message: "Failed to connect to analysis service" });
     } finally {
       stepTimersRef.current.forEach(clearTimeout);
       stepTimersRef.current = [];
@@ -407,6 +407,11 @@ function Home() {
           </svg>
         )}
       </button>
+      {!showHero && (
+        <button className="aa-new-search-btn" onClick={handleNewSearch} aria-label="Start new search">
+          New Search
+        </button>
+      )}
     </div>
   );
 
@@ -517,11 +522,6 @@ function Home() {
                   </div>
                 )}
               </div>
-              {!showHero && (
-                <button className="aa-new-search-btn" onClick={handleNewSearch} aria-label="Start new search">
-                  New Search
-                </button>
-              )}
             </section>
 
             {/* ─── CONTENT AREA ─── */}
@@ -546,7 +546,10 @@ function Home() {
                   </svg>
                   <div>
                     <p className="aa-error-title">Analysis Failed</p>
-                    <p className="aa-error-msg">{error}</p>
+                    <p className="aa-error-msg">{error.message}</p>
+                    {error.suggestion && (
+                      <p className="aa-error-suggestion">{error.suggestion}</p>
+                    )}
                     <button
                       className="aa-retry-btn"
                       onClick={() => lastSearchRef.current && runAudit(lastSearchRef.current.input, lastSearchRef.current.chain)}

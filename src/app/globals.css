@@ -15,8 +15,8 @@
 
   /* Text */
   --color-text-primary: oklch(0.93 0.01 285);
-  --color-text-secondary: oklch(0.68 0.03 285);
-  --color-text-muted: oklch(0.50 0.03 285);
+  --color-text-secondary: oklch(0.75 0.03 285);
+  --color-text-muted: oklch(0.55 0.03 285);
   --color-text-dim: oklch(0.38 0.02 285);
 
   /* Borders */
@@ -506,6 +506,15 @@ body::after {
   gap: 20px;
   max-width: 960px;
   margin: 0 auto;
+  justify-items: center;
+}
+
+/* Center the last non-hero card when it sits alone in a row.
+   With 1 hero (span 2) + 3 regular cards, the 4th child (Monitoring) is alone.
+   :nth-child(even):last-child works here because hero takes slot 1, regulars take 2-4. */
+.aa-feature-card:last-child:nth-child(even) {
+  grid-column: 1 / -1;
+  max-width: calc(50% - 10px);
 }
 .aa-feature-card {
   background: var(--color-surface-raised);
@@ -1316,19 +1325,23 @@ body::after {
 
 .aa-form-label {
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   margin-bottom: 0.5rem;
   display: block;
 }
 
 .aa-form-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
+  display: flex;
   gap: 0.75rem;
   align-items: start;
+}
+
+.aa-form-row .aa-input-wrapper {
+  flex: 1;
+  min-width: 0;
 }
 
 .aa-input-wrapper {
@@ -1360,7 +1373,7 @@ body::after {
 }
 
 .aa-smart-input::placeholder {
-  color: var(--color-text-muted);
+  color: oklch(0.60 0.03 285);
   font-family: var(--font-body);
 }
 
@@ -1894,7 +1907,7 @@ body::after {
 
 .aa-summary-text {
   font-size: 0.875rem;
-  color: var(--color-text-secondary);
+  color: oklch(0.85 0.02 285);
   line-height: 1.7;
 }
 
@@ -2098,7 +2111,7 @@ body::after {
 .aa-table-count {
   font-size: 0.75rem;
   font-family: var(--font-mono);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
 }
 
 .aa-table-wrap {
@@ -2116,7 +2129,7 @@ body::after {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.09em;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   text-align: left;
   border-bottom: 1px solid var(--color-border-subtle);
   background: var(--color-surface-raised);
@@ -2138,7 +2151,7 @@ body::after {
 .aa-table tbody td {
   padding: 0.65rem 1rem;
   font-size: 0.8125rem;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
 }
 
 .aa-tx-hash {
@@ -2233,6 +2246,13 @@ body::after {
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
   margin-top: 0.35rem;
+}
+
+.aa-error-suggestion {
+  font-size: 0.8125rem;
+  color: var(--color-accent-bright);
+  margin-top: 0.5rem;
+  font-style: italic;
 }
 
 /* ─── EMPTY STATE AMBIENT ─── */
@@ -2832,7 +2852,10 @@ body::after {
   }
 
   .aa-form-row {
-    grid-template-columns: 1fr;
+    flex-wrap: wrap;
+  }
+  .aa-form-row .aa-input-wrapper {
+    flex-basis: 100%;
   }
 
   .aa-hero--collapsed { padding: 0.75rem 1.5rem; flex-wrap: wrap; }

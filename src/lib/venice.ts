@@ -203,7 +203,16 @@ You will receive pre-computed behavioral data in ground truth sections. Your job
 - Weave the AGENT BIOGRAPHY facts (wallet age, first action, busiest day, dormancy) into a compelling narrative
 
 Your funFact MUST reference a specific data point from the life events, not a generic observation.
-Your behavioralNarrative should read like a biography: when it started, what it does, key moments, current state.`;
+Your behavioralNarrative should read like a biography: when it started, what it does, key moments, current state.
+
+SUMMARY REQUIREMENTS:
+Your "summary" field MUST be a detailed 4-6 sentence analysis covering:
+1. What this agent primarily does (based on transaction patterns and detected protocols)
+2. Key behavioral characteristics (timing regularity, gas efficiency, counterparty diversity)
+3. Notable findings — both positive signals and risk indicators with specific evidence
+4. Risk assessment rationale — why you assigned this score, referencing specific data points
+Do NOT return vague one-liners like "This agent appears to be legitimate" or "Agent shows normal behavior."
+Each sentence must reference specific data from the behavioral profile provided.`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -410,7 +419,16 @@ function normalizeVeniceResponse(
   const lowerNarrative = rawNarrative.toLowerCase();
   const isGenericNarrative = !rawNarrative || rawNarrative.length < 40 || GENERIC_NARRATIVE_PHRASES.some(p => lowerNarrative.includes(p));
   const behavioralNarrative = isGenericNarrative && metrics
-    ? `This ${resolvedType} has processed ${metrics.protocolsUsed.length > 0 ? "transactions across " + metrics.protocolsUsed.join(", ") : "transactions"} with a ${(metrics.successRate * 100).toFixed(1)}% success rate. Net flow: ${metrics.netFlowETH} ETH across ${metrics.uniqueCounterparties} counterparties.`
+    ? (() => {
+        const protocols = metrics.protocolsUsed.filter(p => p !== "ERC20" && p !== "WETH");
+        const protocolStr = protocols.length > 0 ? protocols.join(", ") : "various contracts";
+        const topContracts = metrics.mostCalledContracts?.slice(0, 3).map(c => `${c.slice(0, 8)}...`).join(", ") ?? "";
+        const ageDesc = metrics.firstSeenTimestamp && metrics.lastSeenTimestamp
+          ? `Active since ${new Date(metrics.firstSeenTimestamp).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
+          : "Recently active";
+        const gasETH = (Number(BigInt(metrics.totalGasSpentWei)) / 1e18).toFixed(4);
+        return `${ageDesc}, this ${resolvedType} operates on ${chainId} via ${protocolStr}. It averages ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day with a ${(metrics.successRate * 100).toFixed(1)}% success rate across ${metrics.uniqueCounterparties} unique counterparties. ${topContracts ? `Most frequently called contracts: ${topContracts}. ` : ""}Net flow: ${metrics.netFlowETH} ETH, total gas spent: ${gasETH} ETH. Consistency score: ${metrics.consistencyScore.toFixed(2)}.`;
+      })()
     : (rawNarrative || "Behavioral analysis not available.");
 
   return {
@@ -427,10 +445,16 @@ function normalizeVeniceResponse(
     summary: (() => {
       const rawSummary = (raw.summary as string | undefined) ?? "";
       const lowerSummary = rawSummary.toLowerCase();
-      const isGenericSummary = !rawSummary || rawSummary.length < 30 || GENERIC_NARRATIVE_PHRASES.some(p => lowerSummary.includes(p));
+      const isGenericSummary = !rawSummary || rawSummary.length < 60 || GENERIC_NARRATIVE_PHRASES.some(p => lowerSummary.includes(p));
       if (isGenericSummary && metrics) {
         const protocols = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
-        return `${resolvedType} active on ${chainId} via ${protocols.length > 0 ? protocols.join(", ") : "various contracts"}. Success rate: ${(metrics.successRate * 100).toFixed(1)}%, net flow: ${metrics.netFlowETH} ETH, ${metrics.uniqueCounterparties} unique counterparties.`;
+        const protocolStr = protocols.length > 0 ? protocols.join(", ") : "various contracts";
+        const gasETH = (Number(BigInt(metrics.totalGasSpentWei)) / 1e18).toFixed(4);
+        const intervalDesc = metrics.txFrequencyPerDay > 0
+          ? `averaging ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day`
+          : "with sporadic activity";
+        const riskLevel = score >= 70 ? "low risk profile" : score >= 40 ? "moderate risk indicators" : "elevated risk signals";
+        return `This ${resolvedType} operates on ${chainId} primarily through ${protocolStr}, ${intervalDesc}. It has interacted with ${metrics.uniqueCounterparties} unique counterparties with a ${(metrics.successRate * 100).toFixed(1)}% transaction success rate. Net flow of ${metrics.netFlowETH} ETH with ${gasETH} ETH spent on gas suggests ${Number(metrics.netFlowETH) >= 0 ? "accumulating" : "operational spending"} behavior. Overall ${riskLevel} with a score of ${score}/100.`;
       }
       return rawSummary || `Score: ${score}/100`;
     })(),
