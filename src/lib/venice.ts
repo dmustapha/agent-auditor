@@ -117,10 +117,11 @@ Breakdown scores are computed locally and will be overridden. Focus on: overallS
 JSON SCHEMA (respond with ONLY this, no markdown fences, no explanation):
 {
   "agentAddress": "0x...",
+  "_thinking": "Before writing the summary, answer these 4 questions in 1 sentence each: 1) What is the SINGLE most interesting or unusual thing about this agent? 2) How does this agent compare to typical agents of its type? 3) What should someone worry about? 4) What's the bottom line — would you trust it?",
   "overallScore": 75,
   "breakdown": {"transactionPatterns": 20, "contractInteractions": 18, "fundFlow": 22, "behavioralConsistency": 15},
   "flags": [{"severity": "MEDIUM", "category": "gas_usage", "description": "...", "evidence": "..."}],
-  "summary": "...",
+  "summary": "USE YOUR _thinking ANSWERS ABOVE to write 4-6 sentences. Lead with insight #1, compare with #2, warn with #3, conclude with #4. Do NOT just list numbers — interpret what they mean.",
   "recommendation": "SAFE",
   "analysisTimestamp": "2026-03-20T12:00:00Z",
   "agentType": "KEEPER",
@@ -150,6 +151,7 @@ Biography: 127 days old | First action: performUpkeep | Busiest day: 2026-02-18 
 
 OUTPUT:
 {
+  "_thinking": "1) This bot does two jobs at once — Chainlink upkeeps AND Olas mech requests — which is unusual for a keeper. 2) Its 96.8% success rate is decent but below the ~99% typical for single-purpose keepers. 3) The 2.1-day March outage and declining balance (0.62→0.15 ETH) suggest it could run out of gas funds soon. 4) Trustworthy for now, but the dual-role design introduces more failure modes than a focused keeper.",
   "summary": "This bot handles two jobs: it runs Chainlink Automation upkeeps (performUpkeep — 614 calls, 58% of all activity) and submits Olas AI mech requests (247 calls, 23%). Over 127 days on Gnosis it has maintained a 96.8% success rate across 1,062 transactions, averaging about 8 transactions per day. It's spent 0.3914 ETH on gas with a net outflow of -0.4721 ETH — meaning it only spends on gas and doesn't move funds elsewhere. Score 76/100: solid reliability, docked for a 2.1-day downtime gap in early March and a 3.2% failure rate.",
   "behavioralNarrative": "This bot has been running for 127 days on Gnosis. It started with Chainlink performUpkeep calls and quickly settled into a rhythm of roughly one transaction every 3 hours. About a month in, it picked up a second role — submitting Olas AI mech requests, which now make up 23% of its workload. Its busiest day was Feb 18 with 34 transactions. It mostly operates between 06:00 and 14:00 UTC and goes quiet overnight (23:00-03:00), which points to a European-timezone operator. The one notable hiccup: it went completely silent from March 1-3 (2.1 days), likely a node restart. Its balance has steadily dropped from 0.62 ETH to 0.15 ETH — all from gas costs, no suspicious withdrawals.",
   "activityProfile": {
@@ -175,6 +177,7 @@ Biography: 203 days old | First action: exactInputSingle swap | Busiest day: 202
 
 OUTPUT:
 {
+  "_thinking": "1) This agent is running a textbook leveraged DeFi loop — swap→deposit→borrow→repeat — and it's actually profitable (+2.847 ETH net). 2) 91.3% success rate is below average for DeFi bots (typically 95%+), likely from swap reverts during volatility. 3) The leverage means a sharp market drop could trigger cascading liquidations. 4) Profitable and consistent, but the leverage strategy means it's one bad day away from getting wiped.",
   "summary": "This agent runs a leveraged DeFi loop: it swaps tokens on Uniswap V3 (389 trades, 42% of activity), deposits them as collateral on Aave V3 (156 deposits, 17%), borrows against that collateral (142 borrows, 15%), and cycles back. Over 203 days on Base it's turned a profit — net +2.847 ETH after spending 1.234 ETH on gas. The 91.3% success rate means about 1 in 11 transactions fails, mostly swap reverts during volatile periods. Score 68/100: the strategy is working and the bot is profitable, but the leveraged positions and 8.7% failure rate introduce real risk.",
   "behavioralNarrative": "Running for 203 days on Base. This agent started purely as a Uniswap V3 trader, then within two weeks added Aave V3 supply and borrow operations — creating a clear pattern: swap tokens → deposit as collateral → borrow more → swap again. Its busiest day was Jan 12 with 52 transactions, likely reacting to a big market move. It barely sleeps — max downtime is just 0.4 days — suggesting fully automated 24/7 operation. The failed transactions (8.7%) cluster around Uniswap swaps, most likely from slippage during fast price movements. Net profit of +2.847 ETH after gas costs shows the strategy is working, but the leveraged Aave positions mean it could face liquidation in a sharp downturn.",
   "activityProfile": {
@@ -735,7 +738,7 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
       {
         model: modelId,
         messages,
-        temperature: 0.85,
+        temperature: 0.7,
         max_tokens: 4096,
         // @ts-expect-error venice_parameters not in OpenAI types
         venice_parameters: {
