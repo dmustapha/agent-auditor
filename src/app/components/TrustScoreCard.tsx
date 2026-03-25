@@ -1,30 +1,34 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { UITrustScore, TrustFlag, AgentType } from "@/lib/types";
+import type { UITrustScore } from "@/lib/types";
 import { ActivityProfile } from "./ActivityProfile";
+import {
+  type Recommendation,
+  CHAIN_EXPLORER,
+  RECOMMENDATION_COLOR,
+  RECOMMENDATION_BADGE_CLASS,
+  VERDICT_ICONS,
+  AGENT_TYPE_META,
+  BREAKDOWN_EXPLANATIONS,
+  TREND_META,
+  formatTimestamp,
+  formatIntervalHours,
+  netFlowSign,
+  gasLabel,
+  netFlowLabel,
+  txSizeLabel,
+  formatGasUI,
+  useScrollReveal,
+  AgentTypeShape,
+  HumanWalletIndicator,
+  CountUpNumber,
+  ActivityHeatmap,
+  BreakdownBar,
+  FlagCard,
+} from "./trustscore";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const CHAIN_EXPLORER: Record<string, string> = {
-  ethereum: "https://eth.blockscout.com",
-  base: "https://base.blockscout.com",
-  gnosis: "https://gnosis.blockscout.com",
-  arbitrum: "https://arbitrum.blockscout.com",
-  optimism: "https://optimism.blockscout.com",
-  polygon: "https://polygon.blockscout.com",
-};
-
-function formatTimestamp(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("en-US", {
-      month: "short", day: "numeric", year: "numeric",
-      hour: "numeric", minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface TrustScoreCardProps {
   score: UITrustScore;
@@ -33,439 +37,21 @@ interface TrustScoreCardProps {
   chainResults?: readonly { chainId: string; txCount: number }[];
 }
 
-type Recommendation = "SAFE" | "CAUTION" | "BLOCKLIST";
+// ─── Score Ring Constants ───────────────────────────────────────────────────
 
-const RECOMMENDATION_COLOR: Record<Recommendation, string> = {
-  SAFE: "#22c55e",
-  CAUTION: "#eab308",
-  BLOCKLIST: "#ef4444",
-};
+const RING_SIZE = 176;
+const RING_CENTER = 88;
+const RING_RADIUS = 72;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+const TICK_COUNT = 12;
 
-const RECOMMENDATION_BADGE_CLASS: Record<Recommendation, string> = {
-  SAFE: "aa-badge-pill aa-badge-safe",
-  CAUTION: "aa-badge-pill aa-badge-caution",
-  BLOCKLIST: "aa-badge-pill aa-badge-blocklist",
-};
-
-const VERDICT_ICONS: Record<Recommendation, React.ReactNode> = {
-  SAFE: (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-      <path d="M20 6L9 17l-5-5" />
-    </svg>
-  ),
-  CAUTION: (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-      <path d="M12 9v4M12 17h.01" />
-      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-    </svg>
-  ),
-  BLOCKLIST: (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" />
-    </svg>
-  ),
-};
-
-const AGENT_TYPE_META: Record<AgentType, { label: string; shape: string; color: string }> = {
-  KEEPER:         { label: "Keeper",         shape: "hexagon",  color: "#9070d4" },
-  ORACLE:         { label: "Oracle",         shape: "diamond",  color: "#60a5fa" },
-  LIQUIDATOR:     { label: "Liquidator",     shape: "triangle", color: "#f97316" },
-  MEV_BOT:        { label: "MEV Bot",        shape: "star",     color: "#ef4444" },
-  BRIDGE_RELAYER: { label: "Bridge Relayer", shape: "octagon",  color: "#22c55e" },
-  DEX_TRADER:      { label: "DEX Trader",      shape: "pentagon", color: "#eab308" },
-  GOVERNANCE:      { label: "Governance",      shape: "shield",   color: "#60a5fa" },
-  YIELD_OPTIMIZER: { label: "Yield Optimizer", shape: "gear",     color: "#34d399" },
-  UNKNOWN:         { label: "Unknown",         shape: "circle",   color: "#78716c" },
-};
-
-const SEVERITY_SHAPE: Record<TrustFlag["severity"], string> = {
-  CRITICAL: "aa-sev-diamond",
-  HIGH:     "aa-sev-triangle",
-  MEDIUM:   "aa-sev-square",
-  LOW:      "aa-sev-circle",
-};
-
-const FLAG_CARD_CLASS: Record<TrustFlag["severity"], string> = {
-  CRITICAL: "aa-flag-card aa-flag-critical",
-  HIGH:     "aa-flag-card aa-flag-high",
-  MEDIUM:   "aa-flag-card aa-flag-medium",
-  LOW:      "aa-flag-card aa-flag-low",
-};
-
-const BREAKDOWN_EXPLANATIONS: Record<string, string> = {
-  "Transaction Patterns": "Timing regularity, gas efficiency, volume consistency, and nonce sequence analysis",
-  "Contract Interactions": "Protocol diversity, verified vs unverified contracts, and proxy usage patterns",
-  "Fund Flow": "Source legitimacy, destination analysis, circular patterns, and sudden large transfers",
-  "Behavioral Consistency": "Alignment between declared purpose and actual on-chain behavior over time",
-};
-
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
-function formatIntervalHours(hours: number): string {
-  if (hours < 1) return `every ${Math.round(hours * 60)}m`;
-  if (hours < 24) return `every ${hours % 1 === 0 ? hours : hours.toFixed(1)}h`;
-  const days = hours / 24;
-  return `every ${days % 1 === 0 ? days : days.toFixed(1)}d`;
-}
-
-function netFlowSign(val: string): "positive" | "negative" | "neutral" {
-  const n = parseFloat(val);
-  if (n > 0) return "positive";
-  if (n < 0) return "negative";
-  return "neutral";
-}
-
-function gasLabel(ethValue: number): string {
-  if (ethValue < 0.01) return "Minimal activity";
-  if (ethValue < 0.1) return "Light spender";
-  if (ethValue < 1.0) return "Moderate spender";
-  if (ethValue < 10) return "Heavy spender";
-  return "Whale-tier gas usage";
-}
-
-function netFlowLabel(ethValue: number): { text: string; color: string; arrow: string } {
-  if (Math.abs(ethValue) < 0.001) return { text: "Neutral flow", color: "var(--color-text-dim)", arrow: "—" };
-  if (ethValue > 0) return { text: "Net accumulator", color: "#22c55e", arrow: "\u2191" };
-  return { text: "Net spender", color: "#ef4444", arrow: "\u2193" };
-}
-
-function txSizeLabel(ethValue: number): string {
-  if (ethValue < 0.01) return "Micro transactions";
-  if (ethValue < 1) return "Standard range";
-  if (ethValue < 10) return "Significant";
-  return "Whale-sized";
-}
-
-function formatGasUI(gas: number): string {
-  if (gas >= 1_000_000) return `${(gas / 1_000_000).toFixed(1)}M`;
-  if (gas >= 1_000) return `${(gas / 1_000).toFixed(1)}k`;
-  return `${Math.round(gas)}`;
-}
-
-function relativeTimeUI(timestampMs: number): string {
-  const diff = Date.now() - timestampMs;
-  const hours = Math.floor(diff / 3_600_000);
-  if (hours < 1) return "< 1hr ago";
-  if (hours < 24) return `${hours}hr ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
-}
-
-function ageDaysUI(firstMs: number, lastMs: number): number {
-  return Math.max(1, Math.round((lastMs - firstMs) / 86_400_000));
-}
-
-const TREND_META = {
-  accumulating: { icon: "\u2197", color: "#22c55e", label: "Accumulating" },
-  depleting: { icon: "\u2198", color: "#ef4444", label: "Depleting" },
-  stable: { icon: "\u2192", color: "var(--color-text-dim)", label: "Stable" },
-} as const;
-
-// ─── WAAPI Helpers ────────────────────────────────────────────────────────────
-
-const SPRING_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
-
-function animateIn(el: Element, delay = 0): Animation {
-  return el.animate(
-    [
-      { opacity: "0", transform: "translateY(24px) scale(0.98)" },
-      { opacity: "1", transform: "translateY(0) scale(1)" },
-    ],
-    { duration: 500, delay, easing: SPRING_EASING, fill: "forwards" }
-  );
-}
-
-function useScrollReveal(deps: unknown[]): React.RefCallback<HTMLElement> {
-  return useCallback((el: HTMLElement | null) => {
-    if (!el) return;
-    el.style.opacity = "0";
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          animateIn(el);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.08 }
-    );
-    observer.observe(el);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function AgentTypeShape({ type }: { type: AgentType }) {
-  const meta = AGENT_TYPE_META[type];
-  const size = 28;
-
-  const shapes: Record<string, React.ReactNode> = {
-    hexagon: (
-      <polygon
-        points="14,2 25,8 25,20 14,26 3,20 3,8"
-        fill="none"
-        stroke={meta.color}
-        strokeWidth="1.5"
-      />
-    ),
-    diamond: (
-      <polygon
-        points="14,2 26,14 14,26 2,14"
-        fill="none"
-        stroke={meta.color}
-        strokeWidth="1.5"
-      />
-    ),
-    triangle: (
-      <polygon
-        points="14,3 26,25 2,25"
-        fill="none"
-        stroke={meta.color}
-        strokeWidth="1.5"
-      />
-    ),
-    star: (
-      <polygon
-        points="14,2 17,10 26,10 19,16 22,25 14,19 6,25 9,16 2,10 11,10"
-        fill="none"
-        stroke={meta.color}
-        strokeWidth="1.5"
-      />
-    ),
-    octagon: (
-      <polygon
-        points="9,2 19,2 26,9 26,19 19,26 9,26 2,19 2,9"
-        fill="none"
-        stroke={meta.color}
-        strokeWidth="1.5"
-      />
-    ),
-    pentagon: (
-      <polygon
-        points="14,2 26,10 21,24 7,24 2,10"
-        fill="none"
-        stroke={meta.color}
-        strokeWidth="1.5"
-      />
-    ),
-    circle: (
-      <circle cx="14" cy="14" r="11" fill="none" stroke={meta.color} strokeWidth="1.5" />
-    ),
-    shield: (
-      <path
-        d="M14 2L4 6v7c0 5.5 4.4 9.7 10 11 5.6-1.3 10-5.5 10-11V6L14 2z"
-        fill="none"
-        stroke={meta.color}
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-    ),
-    gear: (
-      <polygon
-        points="14,3 16,7 20,5 22,9 18,12 20,16 16,18 14,25 12,18 8,16 10,12 6,9 8,5 12,7"
-        fill="none"
-        stroke={meta.color}
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-    ),
-  };
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      aria-hidden="true"
-      style={{ filter: `drop-shadow(0 0 4px ${meta.color}55)` }}
-    >
-      {shapes[meta.shape]}
-    </svg>
-  );
-}
-
-function SeverityShape({ severity }: { severity: TrustFlag["severity"] }) {
-  const shapes: Record<TrustFlag["severity"], React.ReactNode> = {
-    CRITICAL: (
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-        <polygon points="7,1 13,13 1,13" fill="none" stroke="#ef4444" strokeWidth="1.5" />
-      </svg>
-    ),
-    HIGH: (
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-        <polygon points="7,1 13,7 7,13 1,7" fill="none" stroke="#eab308" strokeWidth="1.5" />
-      </svg>
-    ),
-    MEDIUM: (
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-        <rect x="2" y="2" width="10" height="10" fill="none" stroke="#9070d4" strokeWidth="1.5" />
-      </svg>
-    ),
-    LOW: (
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-        <circle cx="7" cy="7" r="5.5" fill="none" stroke="#78716c" strokeWidth="1.5" />
-      </svg>
-    ),
-  };
-  return <>{shapes[severity]}</>;
-}
-
-function HumanWalletIndicator({ isHuman }: { isHuman: boolean }) {
-  if (!isHuman) return null;
-  return (
-    <div className="aa-human-wallet" role="alert" aria-label="Likely human-controlled wallet detected">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="1.75" aria-hidden="true">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-      </svg>
-      <span>Likely human-controlled wallet</span>
-    </div>
-  );
-}
-
-function FlagCard({ flag }: { flag: TrustFlag }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasLongEvidence = flag.evidence ? flag.evidence.length > 120 : false;
-
-  return (
-    <div className={FLAG_CARD_CLASS[flag.severity]} role="listitem">
-      <div className="aa-flag-sev-shape" aria-label={`Severity: ${flag.severity}`}>
-        <SeverityShape severity={flag.severity} />
-        <span className={SEVERITY_SHAPE[flag.severity] + " aa-sev-label"}>{flag.severity}</span>
-      </div>
-      <div style={{ flex: 1 }}>
-        <p className="aa-flag-desc">{flag.description}</p>
-        {flag.evidence && (
-          <div className="aa-flag-evidence-wrap">
-            <p className={`aa-flag-evidence${!expanded && hasLongEvidence ? " aa-flag-evidence--clamped" : ""}`}>
-              {flag.evidence}
-            </p>
-            {hasLongEvidence && (
-              <button
-                className="aa-flag-toggle"
-                onClick={() => setExpanded(!expanded)}
-                aria-expanded={expanded}
-                aria-label={expanded ? "Show less evidence" : "Show more evidence"}
-              >
-                {expanded ? "Show less" : "Show more"}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CountUpNumber({ target, color, duration = 1200 }: { target: number; color: string; duration?: number }) {
-  const [display, setDisplay] = useState(0);
-  const rafRef = useRef<number>(0);
-
-  useEffect(() => {
-    const start = performance.now();
-    function tick(now: number) {
-      const elapsed = now - start;
-      const t = Math.min(elapsed / duration, 1);
-      // cubic-bezier(0.16,1,0.3,1) approximation via ease-out-expo
-      const eased = t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
-      setDisplay(Math.round(eased * target));
-      if (t < 1) rafRef.current = requestAnimationFrame(tick);
-    }
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [target, duration]);
-
-  return <span className="aa-score-val" style={{ color }}>{display}</span>;
-}
-
-function ActivityHeatmap({ peakHours }: { peakHours: readonly number[] }) {
-  const gridRef = useRef<HTMLDivElement>(null);
-  const peakSet = new Set(peakHours);
-
-  useEffect(() => {
-    const grid = gridRef.current;
-    if (!grid) return;
-    const cells = Array.from(grid.querySelectorAll<HTMLElement>(".aa-heatmap-cell"));
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    cells.forEach((cell, i) => {
-      cell.style.opacity = "0";
-      timers.push(setTimeout(() => {
-        cell.animate(
-          [{ opacity: "0", transform: "scale(0.4)" }, { opacity: "1", transform: "scale(1)" }],
-          { duration: 250, easing: SPRING_EASING, fill: "forwards" }
-        );
-      }, i * 30));
-    });
-    return () => timers.forEach(clearTimeout);
-  }, [peakHours]);
-
-  return (
-    <div ref={gridRef} className="aa-heatmap" role="img" aria-label={`Peak activity hours UTC: ${peakHours.join(", ")}`}>
-      {Array.from({ length: 24 }, (_, h) => (
-        <div
-          key={h}
-          className={`aa-heatmap-cell${peakSet.has(h) ? " aa-heatmap-cell--peak" : ""}`}
-          title={`${String(h).padStart(2, "0")}:00 UTC${peakSet.has(h) ? " (peak)" : ""}`}
-        />
-      ))}
-    </div>
-  );
-}
-
-function BreakdownBar({
-  axis,
-  strokeColor,
-  animated,
-  delay,
-}: {
-  axis: { label: string; value: number; max: number };
-  strokeColor: string;
-  animated: boolean;
-  delay: number;
-}) {
-  const barRef = useRef<HTMLDivElement>(null);
-  const pct = (axis.value / axis.max) * 100;
-
-  useEffect(() => {
-    const bar = barRef.current;
-    if (!bar || !animated) return;
-    bar.animate(
-      [
-        { width: "0%" },
-        { width: `${pct * 1.05}%` },
-        { width: `${pct}%` },
-      ],
-      { duration: 900, delay, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "forwards" }
-    );
-  }, [animated, pct, delay]);
-
-  return (
-    <div>
-      <div className="aa-breakdown-label">
-        <span>{axis.label}</span>
-        <span className="aa-breakdown-score" aria-label={`${axis.value} out of ${axis.max}`}>
-          {axis.value}/{axis.max}
-        </span>
-      </div>
-      <div className="aa-bar-track" role="progressbar" aria-valuenow={axis.value} aria-valuemin={0} aria-valuemax={axis.max}>
-        <div
-          ref={barRef}
-          className="aa-bar-fill"
-          style={{ width: "0%", backgroundColor: strokeColor }}
-        />
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main Component ─────────────────────────────────────────────────────────
 
 export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }: TrustScoreCardProps) {
-  const circumference = 2 * Math.PI * 60;
   const recommendation = score.recommendation as Recommendation;
   const strokeColor = RECOMMENDATION_COLOR[recommendation] ?? score.recommendationColor;
+  const typeMeta = AGENT_TYPE_META[score.agentType];
+  const netSign = netFlowSign(score.financialSummary.netFlowETH);
 
   const [animated, setAnimated] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -474,10 +60,9 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const revealKey = `${score.address}-${score.score}`;
+  const r = revealed ? " visible" : "";
 
-  useEffect(() => {
-    setAnimated(false);
-  }, [revealKey]);
+  useEffect(() => { setAnimated(false); }, [revealKey]);
 
   useEffect(() => {
     setRevealed(false);
@@ -510,325 +95,80 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
       setCopied(true);
       clearTimeout(copyTimerRef.current);
       copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard API unavailable
-    }
+    } catch { /* Clipboard API unavailable */ }
   }, [score.address]);
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
   const strokeDashoffset = animated
-    ? circumference - (score.score / score.maxScore) * circumference
-    : circumference;
+    ? RING_CIRCUMFERENCE - (score.score / score.maxScore) * RING_CIRCUMFERENCE
+    : RING_CIRCUMFERENCE;
 
-  const r = revealed ? " visible" : "";
-
-  // Scroll-reveal refs for new sections
-  const narrativeReveal = useScrollReveal([revealKey]);
-  const financialReveal = useScrollReveal([revealKey]);
+  // Scroll-reveal refs
+  const activityReveal = useScrollReveal([revealKey]);
   const operationalReveal = useScrollReveal([revealKey]);
   const networkReveal = useScrollReveal([revealKey]);
-  const protocolsReveal = useScrollReveal([revealKey]);
-  const anomaliesReveal = useScrollReveal([revealKey]);
+  const behavioralReveal = useScrollReveal([revealKey]);
+  const riskReveal = useScrollReveal([revealKey]);
   const funFactReveal = useScrollReveal([revealKey]);
 
-  const typeMeta = AGENT_TYPE_META[score.agentType];
-  const netSign = netFlowSign(score.financialSummary.netFlowETH);
-
   return (
-    <div ref={cardRef} aria-label={`Trust score card for ${score.ensName ?? score.address}`}>
+    <div ref={cardRef} className="aa-result-stack" aria-label={`Trust score card for ${score.ensName ?? score.address}`}>
 
-      {/* ── Identity Header ── */}
-      <div className={`aa-agent-header aa-reveal${r}`}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem", marginBottom: "0" }}>
-          {/* Left: Agent type icon */}
-          <div style={{ flexShrink: 0 }}>
-            <AgentTypeShape type={score.agentType} />
-          </div>
+      {/* ═══ HERO ZONE ═══ */}
+      <div className={`aa-card-hero aa-reveal${r}`}>
+        <HeroIdentity
+          score={score}
+          typeMeta={typeMeta}
+          recommendation={recommendation}
+          badge={badge}
+          attestationTxHash={attestationTxHash}
+          copied={copied}
+          onCopy={handleCopy}
+        />
 
-          {/* Center: Identity info */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* Line 1: Agent type as title */}
-            <h2 style={{
-              fontFamily: "var(--font-display)",
-              fontSize: "1.4rem",
-              color: typeMeta.color,
-              margin: 0,
-            }}>
-              {typeMeta.label}
-            </h2>
+        <ScoreRing
+          score={score.score}
+          maxScore={score.maxScore}
+          strokeColor={strokeColor}
+          animated={animated}
+          strokeDashoffset={strokeDashoffset}
+          performanceScore={score.performanceScore}
+        />
 
-            {/* Line 2: ENS name (if available) + Address + chain */}
-            {score.ensName && (
-              <div style={{ fontFamily: "var(--font-display)", fontSize: "1rem", color: "var(--color-text)", marginTop: "0.15rem", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
-                {score.ensName}
-              </div>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem" }}>
-              <button
-                className="aa-copy-btn"
-                onClick={handleCopy}
-                aria-label={copied ? "Copied!" : "Copy address"}
-                title={copied ? "Copied!" : "Copy address"}
-                style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
-              >
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
-                  {score.address.slice(0, 6)}...{score.address.slice(-4)}
-                </span>
-                {copied ? (
-                  <svg className="aa-copy-icon aa-copy-icon--done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                ) : (
-                  <svg className="aa-copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>
-                )}
-              </button>
-              <span className="aa-badge-pill aa-badge-chain" aria-label={`Chain: ${score.chainName}`}>
-                {score.chainName}
-              </span>
-            </div>
+        <p className="aa-score-timestamp">{formatTimestamp(score.timestamp)}</p>
 
-            {/* Line 3: Protocol tags */}
-            {score.protocolsUsed && score.protocolsUsed.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.5rem" }}>
-                {score.protocolsUsed.slice(0, 5).map((protocol) => (
-                  <span key={protocol} style={{
-                    fontSize: "0.65rem",
-                    padding: "0.15rem 0.45rem",
-                    borderRadius: "9999px",
-                    background: "var(--color-surface)",
-                    color: "var(--color-text-dim)",
-                    border: "1px solid var(--color-border)",
-                  }}>
-                    {protocol}
-                  </span>
-                ))}
-              </div>
-            )}
+        <HeroSummary summary={score.summary} timestamp={score.timestamp} />
 
-            {/* Line 4: Identity stats grid */}
-            {(score.totalTransactions != null || score.firstSeenTimestamp != null) && (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
-                  gap: "0.5rem",
-                  marginTop: "0.6rem",
-                  padding: "0.5rem 0.6rem",
-                  borderRadius: "0.5rem",
-                  background: "var(--color-surface)",
-                  border: "1px solid var(--color-border)",
-                }}
-                aria-label="Wallet identity stats"
-              >
-                {score.firstSeenTimestamp != null && score.lastSeenTimestamp != null && (
-                  <div>
-                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Age</span>
-                    <span style={{ fontSize: "0.85rem", fontFamily: "var(--font-mono)", color: "var(--color-text-muted)" }}>
-                      {ageDaysUI(score.firstSeenTimestamp, score.lastSeenTimestamp)}d
-                    </span>
-                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block" }}>
-                      Since {new Date(score.firstSeenTimestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                    </span>
-                  </div>
-                )}
-                {score.totalTransactions != null && (
-                  <div>
-                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Transactions</span>
-                    <span style={{ fontSize: "0.85rem", fontFamily: "var(--font-mono)", color: "var(--color-text-muted)" }}>
-                      {score.totalTransactions.toLocaleString()}
-                    </span>
-                    {score.txFrequencyPerDay != null && (
-                      <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block" }}>
-                        {score.txFrequencyPerDay.toFixed(1)}/day avg
-                      </span>
-                    )}
-                  </div>
-                )}
-                {score.lastSeenTimestamp != null && (
-                  <div>
-                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Last Active</span>
-                    <span style={{ fontSize: "0.85rem", fontFamily: "var(--font-mono)", color: "var(--color-text-muted)" }}>
-                      {relativeTimeUI(score.lastSeenTimestamp)}
-                    </span>
-                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block" }}>
-                      {new Date(score.lastSeenTimestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                  </div>
-                )}
-                {score.successRate != null && (
-                  <div>
-                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Success Rate</span>
-                    <span style={{
-                      fontSize: "0.85rem",
-                      fontFamily: "var(--font-mono)",
-                      color: score.successRate >= 0.9 ? "#22c55e" : score.successRate >= 0.7 ? "#eab308" : "#ef4444",
-                    }}>
-                      {(score.successRate * 100).toFixed(1)}%
-                    </span>
-                    <span style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", display: "block" }}>
-                      {score.successRate >= 0.95 ? "Excellent" : score.successRate >= 0.85 ? "Good" : score.successRate >= 0.7 ? "Fair" : "Poor"}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Right: Recommendation + badges */}
-          <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.4rem" }}>
-            <span
-              className={RECOMMENDATION_BADGE_CLASS[recommendation]}
-              aria-label={`Recommendation: ${recommendation}`}
-            >
-              {VERDICT_ICONS[recommendation]}
-              {recommendation}
-            </span>
-            {badge === "verified" && (
-              <span className="aa-trust-badge aa-trust-badge--verified">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1l3.09 6.26L22 8.27l-5 4.87 1.18 6.88L12 16.77l-6.18 3.25L7 13.14 2 8.27l6.91-1.01L12 1z"/></svg>
-                Verified Agent
-              </span>
-            )}
-            {badge === "detected" && (
-              <span className="aa-trust-badge aa-trust-badge--detected">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/></svg>
-                Detected Agent
-              </span>
-            )}
-            {badge === "unclassified" && (
-              <span className="aa-trust-badge aa-trust-badge--unclassified">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                Unclassified
-              </span>
-            )}
-            {attestationTxHash && (
-              <a
-                href={`${CHAIN_EXPLORER[score.chainId] ?? CHAIN_EXPLORER.ethereum}/tx/${attestationTxHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontSize: "0.75rem", color: "var(--color-accent)", textDecoration: "underline", marginTop: "0.5rem", display: "inline-block" }}
-              >
-                Onchain attestation ↗
-              </a>
-            )}
-          </div>
-        </div>
-
-        {/* Human wallet indicator + Performance score */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem" }}>
-          <HumanWalletIndicator isHuman={score.isLikelyHumanWallet} />
-          <div className="aa-perf-metric">
-            <span className="aa-perf-label">Performance</span>
-            <span className="aa-perf-value" aria-label={`Performance score: ${score.performanceScore} out of 100`}>
-              {score.performanceScore}
-              <span className="aa-perf-max">/100</span>
-            </span>
-          </div>
-        </div>
+        <HumanWalletIndicator isHuman={score.isLikelyHumanWallet} />
 
         {chainResults && chainResults.length > 1 && (
-          <div style={{ marginTop: "1rem", padding: "0.75rem", background: "var(--color-surface-2)", borderRadius: "0.5rem" }}>
-            <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
-              Active on {chainResults.length} chains
-            </div>
-            {chainResults.map(c => (
-              <div key={c.chainId} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", padding: "0.15rem 0" }}>
-                <span style={{ textTransform: "capitalize" }}>{c.chainId}</span>
-                <span style={{ color: "var(--color-text-muted)" }}>{c.txCount.toLocaleString()} txs</span>
-              </div>
-            ))}
-          </div>
+          <MultiChainInfo chainResults={chainResults} />
         )}
       </div>
 
-      {/* ── Score Ring + Left Content ── */}
-      <div className={`aa-score-section aa-reveal aa-delay-1${r}`}>
-        <div>
-          <p className="aa-score-eyebrow">Trust Score</p>
-          <p className="aa-score-report-title">Forensic Analysis Report</p>
-          <p className="aa-score-meta">
-            {score.chainName} · {formatTimestamp(score.timestamp)}
-          </p>
-        </div>
-
-        <div className="aa-score-ring-wrap">
-          <div
-            className="aa-score-ring"
-            role="img"
-            aria-label={`Trust score: ${score.score} out of ${score.maxScore}`}
-          >
-            {/* Ambient glow layer */}
-            <div className="aa-score-glow" style={{ "--glow-color": strokeColor } as React.CSSProperties} aria-hidden="true" />
-            <svg width="152" height="152" viewBox="0 0 152 152" aria-hidden="true">
-              {/* Track */}
-              <circle cx="76" cy="76" r="64" fill="none" stroke="#1e1e22" strokeWidth="10" />
-              {/* Tick marks */}
-              {Array.from({ length: 12 }, (_, i) => {
-                const angle = (i / 12) * 360 - 90;
-                const rad = (angle * Math.PI) / 180;
-                const r1 = 72, r2 = 76;
-                return (
-                  <line
-                    key={i}
-                    x1={76 + r1 * Math.cos(rad)}
-                    y1={76 + r1 * Math.sin(rad)}
-                    x2={76 + r2 * Math.cos(rad)}
-                    y2={76 + r2 * Math.sin(rad)}
-                    stroke="#252529"
-                    strokeWidth="1.5"
-                  />
-                );
-              })}
-              {/* Score arc */}
-              <circle
-                cx="76" cy="76" r="64"
-                fill="none"
-                stroke={strokeColor}
-                strokeWidth="10"
-                strokeLinecap="round"
-                strokeDasharray={circumference}
-                strokeDashoffset={strokeDashoffset}
-                style={{
-                  transition: animated ? "stroke-dashoffset 1.4s cubic-bezier(0.16, 1, 0.3, 1)" : "none",
-                  transform: "rotate(-90deg)",
-                  transformOrigin: "center",
-                  filter: `drop-shadow(0 0 6px ${strokeColor}66)`,
-                }}
-              />
-            </svg>
-            <div className="aa-score-number">
-              {animated
-                ? <CountUpNumber target={score.score} color={strokeColor} />
-                : <span className="aa-score-val" style={{ color: strokeColor }}>0</span>
-              }
-              <span className="aa-score-label">/ {score.maxScore}</span>
-            </div>
-          </div>
-          <p className="aa-score-timestamp">
-            {formatTimestamp(score.timestamp)}
-          </p>
-        </div>
+      {/* ═══ PRIMARY GRID: Breakdown + Financial ═══ */}
+      <div className="aa-primary-grid">
+        <ScoreBreakdown
+          breakdown={score.breakdown}
+          strokeColor={strokeColor}
+          animated={animated}
+          revealed={r}
+        />
+        <FinancialIntel
+          financialSummary={score.financialSummary}
+          netSign={netSign}
+          ethPrice={score.ethPrice}
+          balanceTrend={score.balanceTrend}
+          avgGasPerTx={score.avgGasPerTx}
+          revealed={r}
+        />
       </div>
 
-      {/* ── Analysis Summary ── */}
-      <div className={`aa-summary-block aa-reveal aa-delay-2${r}`} aria-label="Analysis summary">
-        <p className="aa-summary-label">Analysis Summary</p>
-        <p className="aa-summary-text">{score.summary}</p>
-        <p className="aa-timestamp">Analyzed {formatTimestamp(score.timestamp)}</p>
-      </div>
-
-      {/* ── Activity Profile / Behavioral Narrative ── */}
+      {/* ═══ ACTIVITY PROFILE ═══ */}
       {(score.activityProfile || score.behavioralNarrative) && (
-        <div
-          ref={narrativeReveal}
-          className="aa-narrative-block"
-          aria-label="Activity profile"
-        >
-          <p className="aa-narrative-kicker">
+        <div ref={activityReveal} className="aa-card-secondary" aria-label="Activity profile">
+          <p className="aa-section-title">
             {score.activityProfile ? "Activity Profile" : "Behavioral Analysis"}
           </p>
           <ActivityProfile
@@ -838,189 +178,14 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
         </div>
       )}
 
-      {/* ── Score Breakdown ── */}
-      <div className={`aa-breakdown-card aa-reveal aa-delay-3${r}`} aria-label="Score breakdown">
-        <p className="aa-section-heading">Score Breakdown</p>
-        <div className="aa-breakdown-grid" role="list">
-          {score.breakdown.map((axis, i) => (
-            <div key={axis.label} role="listitem">
-              <BreakdownBar
-                axis={axis}
-                strokeColor={strokeColor}
-                animated={animated}
-                delay={i * 80}
-              />
-              {BREAKDOWN_EXPLANATIONS[axis.label] && (
-                <p style={{
-                  fontSize: "0.7rem",
-                  color: "var(--color-text-dim)",
-                  margin: "0.15rem 0 0.5rem 0",
-                  maxWidth: "24rem",
-                  lineHeight: 1.3,
-                }}>
-                  {BREAKDOWN_EXPLANATIONS[axis.label]}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-        {score.successRate !== undefined && (
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem" }}>
-            <span style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: score.successRate >= 0.9 ? "#22c55e" : score.successRate >= 0.7 ? "#eab308" : "#ef4444",
-            }} />
-            <span style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
-              Success Rate: {(score.successRate * 100).toFixed(1)}%
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* ── Financial Intel ── */}
-      <div ref={financialReveal} className="aa-financial-panel" aria-label="Financial intelligence">
-        <p className="aa-section-heading">Financial Intel</p>
-        <div className="aa-financial-grid">
-          <div className="aa-fin-item">
-            <span className="aa-fin-label">Gas Spent</span>
-            <span className="aa-fin-value">
-              <span className="aa-eth-sym" aria-hidden="true">Ξ</span>
-              {score.financialSummary.totalGasSpentETH}
-            </span>
-            <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.15rem" }}>
-              {gasLabel(parseFloat(score.financialSummary.totalGasSpentETH || "0"))}
-            </span>
-            {score.ethPrice != null && (
-              <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block" }}>
-                ~${(parseFloat(score.financialSummary.totalGasSpentETH || "0") * score.ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>
-            )}
-          </div>
-          <div className="aa-fin-item">
-            <span className="aa-fin-label">Net Flow</span>
-            <span className={`aa-fin-value aa-fin-flow--${netSign}`}>
-              <span className="aa-eth-sym" aria-hidden="true">Ξ</span>
-              {score.financialSummary.netFlowETH}
-            </span>
-            {(() => {
-              const flow = netFlowLabel(parseFloat(score.financialSummary.netFlowETH || "0"));
-              return (
-                <span style={{ fontSize: "0.7rem", color: flow.color, display: "block", marginTop: "0.15rem" }}>
-                  {flow.arrow} {flow.text}
-                </span>
-              );
-            })()}
-            {score.ethPrice != null && (
-              <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block" }}>
-                ~${(Math.abs(parseFloat(score.financialSummary.netFlowETH || "0")) * score.ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>
-            )}
-          </div>
-          <div className="aa-fin-item">
-            <span className="aa-fin-label">Largest Tx</span>
-            <span className="aa-fin-value">
-              <span className="aa-eth-sym" aria-hidden="true">Ξ</span>
-              {score.financialSummary.largestSingleTxETH}
-            </span>
-            <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.15rem" }}>
-              {txSizeLabel(parseFloat(score.financialSummary.largestSingleTxETH || "0"))}
-            </span>
-            {score.ethPrice != null && (
-              <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block" }}>
-                ~${(parseFloat(score.financialSummary.largestSingleTxETH || "0") * score.ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>
-            )}
-          </div>
-          {score.balanceTrend && (() => {
-            const trend = TREND_META[score.balanceTrend];
-            const netVal = parseFloat(score.financialSummary.netFlowETH || "0");
-            return (
-              <div className="aa-fin-item">
-                <span className="aa-fin-label">Balance Trend</span>
-                <span className="aa-fin-value" style={{ color: trend.color, display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                  <span style={{ fontSize: "1.4rem" }}>{trend.icon}</span>
-                  {trend.label}
-                </span>
-                <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.15rem" }}>
-                  {score.balanceTrend === "accumulating"
-                    ? `Growing: net +${Math.abs(netVal).toFixed(4)} ETH inflow`
-                    : score.balanceTrend === "depleting"
-                    ? `Shrinking: net ${netVal.toFixed(4)} ETH outflow`
-                    : "Holding steady, balanced in/out flows"}
-                </span>
-                {score.avgGasPerTx != null && (
-                  <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
-                    Avg gas cost: {formatGasUI(score.avgGasPerTx)} gas/tx
-                  </span>
-                )}
-              </div>
-            );
-          })()}
-        </div>
-      </div>
-
-      {/* ── Operational Pattern ── */}
-      <div ref={operationalReveal} className="aa-operational-panel" aria-label="Operational pattern">
-        <p className="aa-section-heading">Operational Pattern</p>
-        <div className="aa-operational-grid">
-          <div className="aa-op-item">
-            <span className="aa-op-label">Cadence</span>
-            <span className="aa-op-value">
-              {formatIntervalHours(score.operationalPattern.avgIntervalHours)}
-            </span>
-          </div>
-          <div className="aa-op-item">
-            <span className="aa-op-label">Consistency</span>
-            <div className="aa-consistency-wrap">
-              {(() => {
-                // API returns 0-1 decimal; normalize to 0-100
-                const raw = score.operationalPattern.consistencyScore;
-                const pct = raw <= 1 ? raw * 100 : raw;
-                return (
-                  <>
-                    <div className="aa-consistency-track">
-                      <div
-                        className="aa-consistency-fill"
-                        style={{ width: `${pct}%` }}
-                        role="progressbar"
-                        aria-valuenow={pct}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                      />
-                    </div>
-                    <span className="aa-op-pct">{Math.round(pct)}%</span>
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-          {score.avgGasPerTx != null && (
-            <div className="aa-op-item">
-              <span className="aa-op-label">Gas/Tx</span>
-              <span className="aa-op-value">{formatGasUI(score.avgGasPerTx)}</span>
-              <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
-                {score.avgGasPerTx < 50_000 ? "Simple transfers"
-                  : score.avgGasPerTx < 150_000 ? "Standard DeFi ops"
-                  : score.avgGasPerTx < 500_000 ? "Complex interactions"
-                  : "Heavy computation"}
-              </span>
-            </div>
-          )}
-          {score.txFrequencyPerDay != null && (
-            <div className="aa-op-item">
-              <span className="aa-op-label">Tx/Day</span>
-              <span className="aa-op-value">{score.txFrequencyPerDay.toFixed(1)}</span>
-              <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
-                {score.txFrequencyPerDay < 1 ? "Infrequent operator"
-                  : score.txFrequencyPerDay < 5 ? "Moderate activity"
-                  : score.txFrequencyPerDay < 20 ? "Active operator"
-                  : "High-frequency bot"}
-              </span>
-            </div>
-          )}
-        </div>
+      {/* ═══ OPERATIONAL ═══ */}
+      <div ref={operationalReveal} className="aa-card-secondary" aria-label="Operational pattern">
+        <p className="aa-section-title">Operational Pattern</p>
+        <OperationalStats
+          operationalPattern={score.operationalPattern}
+          avgGasPerTx={score.avgGasPerTx}
+          txFrequencyPerDay={score.txFrequencyPerDay}
+        />
         <div className="aa-heatmap-wrap">
           <p className="aa-heatmap-label">24h Activity Map (UTC)</p>
           <ActivityHeatmap peakHours={score.operationalPattern.peakHoursUTC} />
@@ -1032,121 +197,584 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
         </div>
       </div>
 
-      {/* ── Network & Counterparties ── */}
-      {(score.uniqueCounterparties != null || (score.nonceGaps != null && score.nonceGaps > 0) || (score.mostCalledContracts && score.mostCalledContracts.length > 0)) && (
-        <div ref={networkReveal} className="aa-operational-panel" aria-label="Network analysis">
-          <p className="aa-section-heading">Network & Counterparties</p>
-          <div className="aa-operational-grid">
-            {score.uniqueCounterparties != null && (
-              <div className="aa-op-item">
-                <span className="aa-op-label">Unique Counterparties</span>
-                <span className="aa-op-value">{score.uniqueCounterparties.toLocaleString()}</span>
-                <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
-                  {score.uniqueCounterparties <= 3 ? "Narrow network, few contracts"
-                    : score.uniqueCounterparties <= 10 ? "Focused operator, targeted contracts"
-                    : score.uniqueCounterparties <= 30 ? "Diverse network, multi-protocol"
-                    : "Wide reach, interacts broadly"}
-                </span>
-              </div>
-            )}
-            {score.nonceGaps != null && score.nonceGaps > 0 && (
-              <div className="aa-op-item">
-                <span className="aa-op-label">Nonce Gaps</span>
-                <span className="aa-op-value" style={{ color: "#eab308" }}>{score.nonceGaps}</span>
-                <span style={{ fontSize: "0.65rem", color: "#eab308", display: "block", marginTop: "0.1rem" }}>
-                  {score.nonceGaps === 1 ? "Minor gap, likely a dropped tx"
-                    : score.nonceGaps <= 3 ? "Some gaps, possible tx replacements"
-                    : "Multiple gaps: unusual, may indicate MEV or tx manipulation"}
-                </span>
-              </div>
-            )}
-            {score.nonceGaps != null && score.nonceGaps === 0 && (
-              <div className="aa-op-item">
-                <span className="aa-op-label">Nonce Gaps</span>
-                <span className="aa-op-value" style={{ color: "#22c55e" }}>0</span>
-                <span style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", display: "block", marginTop: "0.1rem" }}>
-                  Clean sequence, no dropped transactions
-                </span>
-              </div>
-            )}
-          </div>
-          {score.mostCalledContracts && score.mostCalledContracts.length > 0 && (
-            <div style={{ marginTop: "0.75rem" }}>
-              <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", display: "block", marginBottom: "0.4rem", fontWeight: 500 }}>
-                Most Frequented Contracts
-              </span>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                {score.mostCalledContracts.slice(0, 5).map((addr, i) => (
-                  <div
-                    key={addr}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      padding: "0.35rem 0.5rem",
-                      borderRadius: "0.4rem",
-                      background: i === 0 ? "rgba(144, 112, 212, 0.08)" : "var(--color-surface)",
-                      border: `1px solid ${i === 0 ? "rgba(144, 112, 212, 0.2)" : "var(--color-border)"}`,
-                    }}
-                  >
-                    <span style={{
-                      fontSize: "0.6rem",
-                      color: "var(--color-text-dim)",
-                      width: "1.2rem",
-                      textAlign: "center",
-                      flexShrink: 0,
-                    }}>
-                      #{i + 1}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: "0.7rem",
-                        fontFamily: "var(--font-mono)",
-                        color: "var(--color-text-muted)",
-                        flex: 1,
-                      }}
-                      title={addr}
-                    >
-                      {addr.slice(0, 10)}...{addr.slice(-6)}
-                    </span>
-                    {i === 0 && (
-                      <span style={{ fontSize: "0.55rem", color: "#9070d4", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Primary
-                      </span>
-                    )}
+      {/* ═══ NETWORK ═══ */}
+      {hasNetworkData(score) && (
+        <div ref={networkReveal} className="aa-card-secondary" aria-label="Network analysis">
+          <p className="aa-section-title">Network &amp; Counterparties</p>
+          <NetworkSection score={score} />
+        </div>
+      )}
+
+      {/* ═══ BEHAVIORAL INSIGHTS ═══ */}
+      {score.behavioralProfile && (
+        <div ref={behavioralReveal} className="aa-card-secondary" aria-label="Behavioral insights">
+          <p className="aa-section-title">Behavioral Insights</p>
+          <BehavioralInsights profile={score.behavioralProfile} />
+        </div>
+      )}
+
+      {/* ═══ RISK SIGNALS ═══ */}
+      {(score.flags.length > 0 || score.anomalies.length > 0) && (
+        <div ref={riskReveal} className="aa-card-secondary" aria-label="Risk signals">
+          <p className="aa-section-title">Risk Signals</p>
+          {score.flags.length > 0 && (
+            <>
+              <p className="aa-flags-label">Risk Flags: {score.flags.length} detected</p>
+              <div className="aa-flags-list" role="list">
+                {score.flags.map((flag, i) => (
+                  <div key={i} className="aa-reveal" style={{ transitionDelay: `${i * 60}ms` }}>
+                    <FlagCard flag={flag} />
                   </div>
                 ))}
               </div>
+            </>
+          )}
+          {score.anomalies.length > 0 && (
+            <div className="aa-anomalies-section">
+              <p className="aa-section-heading">
+                Anomaly Signals
+                <span className="aa-anomaly-count">{score.anomalies.length}</span>
+              </p>
+              <ul className="aa-anomaly-list" role="list">
+                {score.anomalies.map((anomaly, i) => (
+                  <li key={i} className="aa-anomaly-item" role="listitem">
+                    <span className="aa-anomaly-marker" aria-hidden="true" />
+                    <span className="aa-anomaly-text">{anomaly}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
       )}
 
-      {/* ── Protocol Fingerprint ── */}
+      {/* ═══ FUN FACT ═══ */}
+      {score.funFact && (
+        <div ref={funFactReveal} className="aa-funfact" aria-label="Agent fun fact">
+          <p className="aa-funfact-label">Fun Fact</p>
+          <p>{score.funFact}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Hero Identity ──────────────────────────────────────────────────────────
+
+function HeroIdentity({
+  score,
+  typeMeta,
+  recommendation,
+  badge,
+  attestationTxHash,
+  copied,
+  onCopy,
+}: {
+  score: UITrustScore;
+  typeMeta: { label: string; color: string };
+  recommendation: Recommendation;
+  badge?: "verified" | "detected" | "unclassified" | null;
+  attestationTxHash?: string | null;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="aa-hero-zone-identity">
+      <div className="aa-identity-left">
+        <div className="aa-identity-type-row">
+          <AgentTypeShape type={score.agentType} />
+          <span className="aa-agent-type-label" style={{ color: typeMeta.color }}>
+            {typeMeta.label}
+          </span>
+        </div>
+
+        {score.ensName && (
+          <div className="aa-ens-name">{score.ensName}</div>
+        )}
+
+        <div className="aa-address-row">
+          <button
+            className="aa-copy-btn"
+            onClick={onCopy}
+            aria-label={copied ? "Copied!" : "Copy address"}
+            title={copied ? "Copied!" : "Copy address"}
+          >
+            <span className="aa-address-mono">
+              {score.address.slice(0, 6)}...{score.address.slice(-4)}
+            </span>
+            {copied ? (
+              <svg className="aa-copy-icon aa-copy-icon--done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg className="aa-copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+              </svg>
+            )}
+          </button>
+          <span className="aa-badge-pill aa-badge-chain" aria-label={`Chain: ${score.chainName}`}>
+            {score.chainName}
+          </span>
+        </div>
+
+        {score.protocolsUsed.length > 0 && (
+          <div className="aa-protocol-tags">
+            {score.protocolsUsed.slice(0, 5).map((protocol) => (
+              <span key={protocol} className="aa-protocol-tag">{protocol}</span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="aa-identity-right">
+        <span
+          className={RECOMMENDATION_BADGE_CLASS[recommendation]}
+          aria-label={`Recommendation: ${recommendation}`}
+        >
+          {VERDICT_ICONS[recommendation]}
+          {recommendation}
+        </span>
+        {badge === "verified" && (
+          <span className="aa-trust-badge aa-trust-badge--verified">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1l3.09 6.26L22 8.27l-5 4.87 1.18 6.88L12 16.77l-6.18 3.25L7 13.14 2 8.27l6.91-1.01L12 1z"/></svg>
+            Verified Agent
+          </span>
+        )}
+        {badge === "detected" && (
+          <span className="aa-trust-badge aa-trust-badge--detected">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/></svg>
+            Detected Agent
+          </span>
+        )}
+        {badge === "unclassified" && (
+          <span className="aa-trust-badge aa-trust-badge--unclassified">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Unclassified
+          </span>
+        )}
+        {attestationTxHash && (
+          <a
+            href={`${CHAIN_EXPLORER[score.chainId] ?? CHAIN_EXPLORER.ethereum}/tx/${attestationTxHash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="aa-attestation-link"
+          >
+            Onchain attestation ↗
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Score Ring ─────────────────────────────────────────────────────────────
+
+function ScoreRing({
+  score,
+  maxScore,
+  strokeColor,
+  animated,
+  strokeDashoffset,
+  performanceScore,
+}: {
+  score: number;
+  maxScore: number;
+  strokeColor: string;
+  animated: boolean;
+  strokeDashoffset: number;
+  performanceScore: number;
+}) {
+  return (
+    <div className="aa-hero-zone-score">
+      <div
+        className="aa-score-ring aa-score-ring--176"
+        role="img"
+        aria-label={`Trust score: ${score} out of ${maxScore}`}
+      >
+        <div className="aa-score-glow" style={{ "--glow-color": strokeColor } as React.CSSProperties} aria-hidden="true" />
+        <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} aria-hidden="true">
+          <circle cx={RING_CENTER} cy={RING_CENTER} r={RING_RADIUS} fill="none" stroke="#1e1e22" strokeWidth="10" />
+          {Array.from({ length: TICK_COUNT }, (_, i) => {
+            const angle = (i / TICK_COUNT) * 360 - 90;
+            const rad = (angle * Math.PI) / 180;
+            const r1 = RING_RADIUS + 8;
+            const r2 = RING_RADIUS + 12;
+            return (
+              <line
+                key={i}
+                x1={RING_CENTER + r1 * Math.cos(rad)}
+                y1={RING_CENTER + r1 * Math.sin(rad)}
+                x2={RING_CENTER + r2 * Math.cos(rad)}
+                y2={RING_CENTER + r2 * Math.sin(rad)}
+                stroke="#252529"
+                strokeWidth="1.5"
+              />
+            );
+          })}
+          <circle
+            cx={RING_CENTER} cy={RING_CENTER} r={RING_RADIUS}
+            fill="none"
+            stroke={strokeColor}
+            strokeWidth="10"
+            strokeLinecap="round"
+            strokeDasharray={RING_CIRCUMFERENCE}
+            strokeDashoffset={strokeDashoffset}
+            className="aa-score-arc"
+            style={{
+              transition: animated ? "stroke-dashoffset 1.4s cubic-bezier(0.16, 1, 0.3, 1)" : "none",
+              transformOrigin: "center",
+              filter: `drop-shadow(0 0 6px ${strokeColor}66)`,
+            }}
+          />
+        </svg>
+        <div className="aa-score-number">
+          {animated
+            ? <CountUpNumber target={score} color={strokeColor} />
+            : <span className="aa-score-val" style={{ color: strokeColor }}>0</span>
+          }
+          <span className="aa-score-label">/ {maxScore}</span>
+        </div>
+      </div>
+      <p className="aa-perf-below-ring">
+        Performance <span className="aa-perf-below-value">{performanceScore}/100</span>
+      </p>
+    </div>
+  );
+}
+
+// ─── Hero Summary ───────────────────────────────────────────────────────────
+
+function HeroSummary({ summary, timestamp }: { summary: string; timestamp: string }) {
+  return (
+    <div className="aa-hero-zone-summary">
+      <p className="aa-summary-label">Analysis Summary</p>
+      <p className="aa-summary-text">{summary}</p>
+      <p className="aa-summary-timestamp">Analyzed {formatTimestamp(timestamp)}</p>
+    </div>
+  );
+}
+
+// ─── Multi-Chain Info ───────────────────────────────────────────────────────
+
+function MultiChainInfo({ chainResults }: { chainResults: readonly { chainId: string; txCount: number }[] }) {
+  return (
+    <div className="aa-multichain-info">
+      <p className="aa-multichain-heading">Active on {chainResults.length} chains</p>
+      {chainResults.map(c => (
+        <div key={c.chainId} className="aa-multichain-row">
+          <span className="aa-multichain-chain">{c.chainId}</span>
+          <span className="aa-multichain-count">{c.txCount.toLocaleString()} txs</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Score Breakdown ────────────────────────────────────────────────────────
+
+function ScoreBreakdown({
+  breakdown,
+  strokeColor,
+  animated,
+  revealed,
+}: {
+  breakdown: UITrustScore["breakdown"];
+  strokeColor: string;
+  animated: boolean;
+  revealed: string;
+}) {
+  return (
+    <div className={`aa-card-primary aa-reveal aa-delay-3${revealed}`} aria-label="Score breakdown">
+      <p className="aa-section-title">Score Breakdown</p>
+
+      <div className="aa-stats-grid-2x2">
+        {breakdown.map((axis) => (
+          <div key={axis.label} className="aa-stat-cell">
+            <p className="aa-stat-cell-label">{axis.label}</p>
+            <p className="aa-stat-cell-value">{axis.value}/{axis.max}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="aa-breakdown-bars" role="list">
+        {breakdown.map((axis, i) => (
+          <div key={axis.label} role="listitem">
+            <BreakdownBar axis={axis} strokeColor={strokeColor} animated={animated} delay={i * 80} />
+            {BREAKDOWN_EXPLANATIONS[axis.label] && (
+              <p className="aa-breakdown-explanation">{BREAKDOWN_EXPLANATIONS[axis.label]}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Financial Intel ────────────────────────────────────────────────────────
+
+function FinancialIntel({
+  financialSummary,
+  netSign,
+  ethPrice,
+  balanceTrend,
+  avgGasPerTx,
+  revealed,
+}: {
+  financialSummary: UITrustScore["financialSummary"];
+  netSign: "positive" | "negative" | "neutral";
+  ethPrice?: number;
+  balanceTrend?: "accumulating" | "depleting" | "stable";
+  avgGasPerTx?: number;
+  revealed: string;
+}) {
+  const flow = netFlowLabel(parseFloat(financialSummary.netFlowETH || "0"));
+  const netVal = parseFloat(financialSummary.netFlowETH || "0");
+
+  return (
+    <div className={`aa-card-primary aa-reveal aa-delay-3${revealed}`} aria-label="Financial intelligence">
+      <p className="aa-section-title">Financial Intel</p>
+
+      <div className="aa-financial-grid-2x2">
+        {/* Gas Spent */}
+        <div className="aa-stat-cell">
+          <p className="aa-stat-cell-label">Gas Spent</p>
+          <p className="aa-stat-cell-value">
+            <span className="aa-eth-sym" aria-hidden="true">Ξ</span>
+            {financialSummary.totalGasSpentETH}
+          </p>
+          <p className="aa-stat-cell-sub">{gasLabel(parseFloat(financialSummary.totalGasSpentETH || "0"))}</p>
+          {ethPrice != null && (
+            <p className="aa-stat-cell-sub">
+              ~${(parseFloat(financialSummary.totalGasSpentETH || "0") * ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </p>
+          )}
+        </div>
+
+        {/* Net Flow */}
+        <div className="aa-stat-cell">
+          <p className="aa-stat-cell-label">Net Flow</p>
+          <p className={`aa-stat-cell-value aa-fin-flow--${netSign}`}>
+            <span className="aa-eth-sym" aria-hidden="true">Ξ</span>
+            {financialSummary.netFlowETH}
+          </p>
+          <p className="aa-stat-cell-sub" style={{ color: flow.color }}>
+            {flow.arrow} {flow.text}
+          </p>
+          {ethPrice != null && (
+            <p className="aa-stat-cell-sub">
+              ~${(Math.abs(parseFloat(financialSummary.netFlowETH || "0")) * ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </p>
+          )}
+        </div>
+
+        {/* Largest Tx */}
+        <div className="aa-stat-cell">
+          <p className="aa-stat-cell-label">Largest Tx</p>
+          <p className="aa-stat-cell-value">
+            <span className="aa-eth-sym" aria-hidden="true">Ξ</span>
+            {financialSummary.largestSingleTxETH}
+          </p>
+          <p className="aa-stat-cell-sub">{txSizeLabel(parseFloat(financialSummary.largestSingleTxETH || "0"))}</p>
+          {ethPrice != null && (
+            <p className="aa-stat-cell-sub">
+              ~${(parseFloat(financialSummary.largestSingleTxETH || "0") * ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </p>
+          )}
+        </div>
+
+        {/* Balance Trend */}
+        {balanceTrend ? (() => {
+          const trend = TREND_META[balanceTrend];
+          return (
+            <div className="aa-stat-cell">
+              <p className="aa-stat-cell-label">Balance Trend</p>
+              <p className="aa-stat-cell-value aa-trend-value" style={{ color: trend.color }}>
+                <span className="aa-trend-icon">{trend.icon}</span>
+                {trend.label}
+              </p>
+              <p className="aa-stat-cell-sub">
+                {balanceTrend === "accumulating"
+                  ? `Growing: net +${Math.abs(netVal).toFixed(4)} ETH inflow`
+                  : balanceTrend === "depleting"
+                  ? `Shrinking: net ${netVal.toFixed(4)} ETH outflow`
+                  : "Holding steady, balanced in/out flows"}
+              </p>
+              {avgGasPerTx != null && (
+                <p className="aa-stat-cell-sub">Avg gas cost: {formatGasUI(avgGasPerTx)} gas/tx</p>
+              )}
+            </div>
+          );
+        })() : (
+          <div className="aa-stat-cell">
+            <p className="aa-stat-cell-label">Balance Trend</p>
+            <p className="aa-stat-cell-value aa-stat-cell-sub">N/A</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Operational Stats ──────────────────────────────────────────────────────
+
+function OperationalStats({
+  operationalPattern,
+  avgGasPerTx,
+  txFrequencyPerDay,
+}: {
+  operationalPattern: UITrustScore["operationalPattern"];
+  avgGasPerTx?: number;
+  txFrequencyPerDay?: number;
+}) {
+  const raw = operationalPattern.consistencyScore;
+  const pct = raw <= 1 ? raw * 100 : raw;
+
+  return (
+    <div className="aa-operational-grid">
+      <div className="aa-op-item">
+        <span className="aa-op-label">Cadence</span>
+        <span className="aa-op-value">{formatIntervalHours(operationalPattern.avgIntervalHours)}</span>
+      </div>
+      <div className="aa-op-item">
+        <span className="aa-op-label">Consistency</span>
+        <div className="aa-consistency-wrap">
+          <div className="aa-consistency-track">
+            <div
+              className="aa-consistency-fill"
+              style={{ width: `${pct}%` }}
+              role="progressbar"
+              aria-valuenow={pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            />
+          </div>
+          <span className="aa-op-pct">{Math.round(pct)}%</span>
+        </div>
+      </div>
+      {avgGasPerTx != null && (
+        <div className="aa-op-item">
+          <span className="aa-op-label">Gas/Tx</span>
+          <span className="aa-op-value">{formatGasUI(avgGasPerTx)}</span>
+          <span className="aa-op-sub">
+            {avgGasPerTx < 50_000 ? "Simple transfers"
+              : avgGasPerTx < 150_000 ? "Standard DeFi ops"
+              : avgGasPerTx < 500_000 ? "Complex interactions"
+              : "Heavy computation"}
+          </span>
+        </div>
+      )}
+      {txFrequencyPerDay != null && (
+        <div className="aa-op-item">
+          <span className="aa-op-label">Tx/Day</span>
+          <span className="aa-op-value">{txFrequencyPerDay.toFixed(1)}</span>
+          <span className="aa-op-sub">
+            {txFrequencyPerDay < 1 ? "Infrequent operator"
+              : txFrequencyPerDay < 5 ? "Moderate activity"
+              : txFrequencyPerDay < 20 ? "Active operator"
+              : "High-frequency bot"}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Network Section ────────────────────────────────────────────────────────
+
+function hasNetworkData(score: UITrustScore): boolean {
+  return (
+    score.uniqueCounterparties != null ||
+    (score.nonceGaps != null && score.nonceGaps > 0) ||
+    (score.mostCalledContracts != null && score.mostCalledContracts.length > 0) ||
+    score.protocolsUsed.length > 0
+  );
+}
+
+function NetworkSection({ score }: { score: UITrustScore }) {
+  return (
+    <>
+      <div className="aa-operational-grid">
+        {score.uniqueCounterparties != null && (
+          <div className="aa-op-item">
+            <span className="aa-op-label">Unique Counterparties</span>
+            <span className="aa-op-value">{score.uniqueCounterparties.toLocaleString()}</span>
+            <span className="aa-op-sub">
+              {score.uniqueCounterparties <= 3 ? "Narrow network, few contracts"
+                : score.uniqueCounterparties <= 10 ? "Focused operator, targeted contracts"
+                : score.uniqueCounterparties <= 30 ? "Diverse network, multi-protocol"
+                : "Wide reach, interacts broadly"}
+            </span>
+          </div>
+        )}
+        {score.nonceGaps != null && score.nonceGaps > 0 && (
+          <div className="aa-op-item">
+            <span className="aa-op-label">Nonce Gaps</span>
+            <span className="aa-op-value aa-nonce-warn">{score.nonceGaps}</span>
+            <span className="aa-op-sub aa-nonce-warn">
+              {score.nonceGaps === 1 ? "Minor gap, likely a dropped tx"
+                : score.nonceGaps <= 3 ? "Some gaps, possible tx replacements"
+                : "Multiple gaps: unusual, may indicate MEV or tx manipulation"}
+            </span>
+          </div>
+        )}
+        {score.nonceGaps != null && score.nonceGaps === 0 && (
+          <div className="aa-op-item">
+            <span className="aa-op-label">Nonce Gaps</span>
+            <span className="aa-op-value aa-nonce-clean">0</span>
+            <span className="aa-op-sub">Clean sequence, no dropped transactions</span>
+          </div>
+        )}
+      </div>
+
+      {score.mostCalledContracts && score.mostCalledContracts.length > 0 && (
+        <div className="aa-frequented-contracts">
+          <p className="aa-frequented-heading">Most Frequented Contracts</p>
+          <div className="aa-frequented-list">
+            {score.mostCalledContracts.slice(0, 5).map((addr, i) => (
+              <div key={addr} className={`aa-frequented-item${i === 0 ? " aa-frequented-item--primary" : ""}`}>
+                <span className="aa-frequented-rank">#{i + 1}</span>
+                <span className="aa-frequented-addr" title={addr}>
+                  {addr.slice(0, 10)}...{addr.slice(-6)}
+                </span>
+                {i === 0 && <span className="aa-frequented-badge">Primary</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {score.protocolsUsed.length > 0 && (
-        <div ref={protocolsReveal} className="aa-protocols-panel" aria-label="Protocols used">
-          <p className="aa-section-heading">Protocol Fingerprint</p>
+        <div className="aa-protocol-fingerprint">
+          <p className="aa-frequented-heading">Protocol Fingerprint</p>
           <div className="aa-protocols-scroll" role="list" aria-label="Protocols list">
             {score.protocolsUsed.map((protocol, i) => (
-              <span
-                key={protocol}
-                className="aa-protocol-chip"
-                role="listitem"
-                style={{ animationDelay: `${i * 40}ms` }}
-              >
+              <span key={protocol} className="aa-protocol-chip" role="listitem" style={{ animationDelay: `${i * 40}ms` }}>
                 {protocol}
               </span>
             ))}
           </div>
         </div>
       )}
+    </>
+  );
+}
 
-      {/* ── Life Events ── */}
-      {score.behavioralProfile?.lifeEvents && score.behavioralProfile.lifeEvents.length > 0 && (
-        <div className="aa-card aa-life-events" aria-label="Life events timeline">
+// ─── Behavioral Insights ────────────────────────────────────────────────────
+
+function BehavioralInsights({
+  profile,
+}: {
+  profile: NonNullable<UITrustScore["behavioralProfile"]>;
+}) {
+  return (
+    <>
+      {/* Life Events */}
+      {profile.lifeEvents.length > 0 && (
+        <div className="aa-life-events">
           <p className="aa-section-heading">Life Events</p>
           <div className="aa-timeline">
-            {score.behavioralProfile.lifeEvents.map((event, i) => (
+            {profile.lifeEvents.map((event, i) => (
               <div key={i} className={`aa-timeline-item aa-event-${event.type}`}>
                 <span className="aa-event-date">{event.date}</span>
                 <span className="aa-event-desc">{event.description}</span>
@@ -1157,11 +785,11 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
         </div>
       )}
 
-      {/* ── Activity Breakdown ── */}
-      {score.behavioralProfile?.activityBreakdown && score.behavioralProfile.activityBreakdown.length > 0 && (
-        <div className="aa-card aa-activity-breakdown" aria-label="Activity breakdown">
+      {/* Activity Breakdown */}
+      {profile.activityBreakdown.length > 0 && (
+        <div className="aa-activity-breakdown">
           <p className="aa-section-heading">Activity Breakdown</p>
-          {score.behavioralProfile.activityBreakdown.map((cat, i) => (
+          {profile.activityBreakdown.map((cat, i) => (
             <div key={i} className="aa-activity-bar">
               <div className="aa-activity-label">
                 <span>{cat.category.replace(/_/g, " ")}</span>
@@ -1178,11 +806,11 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
         </div>
       )}
 
-      {/* ── Top Counterparties ── */}
-      {score.behavioralProfile?.topCounterparties && score.behavioralProfile.topCounterparties.length > 0 && (
-        <div className="aa-card aa-top-counterparties" aria-label="Top counterparties">
+      {/* Top Counterparties */}
+      {profile.topCounterparties.length > 0 && (
+        <div className="aa-top-counterparties">
           <p className="aa-section-heading">Top Counterparties</p>
-          {score.behavioralProfile.topCounterparties.map((cp, i) => (
+          {profile.topCounterparties.map((cp, i) => (
             <div key={i} className="aa-counterparty-row">
               <span className="aa-cp-rank">#{i + 1}</span>
               <span className="aa-cp-name">{cp.name ?? `${cp.address.slice(0, 10)}...`}</span>
@@ -1195,81 +823,34 @@ export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }
         </div>
       )}
 
-      {/* ── Token Flow & Timezone ── */}
-      {score.behavioralProfile && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-          {score.behavioralProfile.tokenFlowSummary.uniqueTokens > 0 && (
-            <div className="aa-card" aria-label="Token flow summary">
-              <p className="aa-section-heading">Token Flow</p>
-              <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                {score.behavioralProfile.tokenFlowSummary.dominantToken && (
-                  <span>Dominant: <strong>{score.behavioralProfile.tokenFlowSummary.dominantToken.symbol}</strong> ({score.behavioralProfile.tokenFlowSummary.dominantToken.txCount} txs)</span>
-                )}
-                <span>Unique tokens: {score.behavioralProfile.tokenFlowSummary.uniqueTokens}</span>
-                <span>Net direction: {score.behavioralProfile.tokenFlowSummary.netDirection}</span>
-                {score.behavioralProfile.tokenFlowSummary.topTokens.length > 1 && (
-                  <span>Top: {score.behavioralProfile.tokenFlowSummary.topTokens.slice(0, 3).map(t => t.symbol).join(", ")}</span>
-                )}
-              </div>
+      {/* Token Flow + Timezone side by side */}
+      <div className="aa-insights-pair">
+        {profile.tokenFlowSummary.uniqueTokens > 0 && (
+          <div className="aa-insights-cell">
+            <p className="aa-section-heading">Token Flow</p>
+            <div className="aa-insights-detail">
+              {profile.tokenFlowSummary.dominantToken && (
+                <span>Dominant: <strong>{profile.tokenFlowSummary.dominantToken.symbol}</strong> ({profile.tokenFlowSummary.dominantToken.txCount} txs)</span>
+              )}
+              <span>Unique tokens: {profile.tokenFlowSummary.uniqueTokens}</span>
+              <span>Net direction: {profile.tokenFlowSummary.netDirection}</span>
+              {profile.tokenFlowSummary.topTokens.length > 1 && (
+                <span>Top: {profile.tokenFlowSummary.topTokens.slice(0, 3).map(t => t.symbol).join(", ")}</span>
+              )}
             </div>
-          )}
-          {score.behavioralProfile.timezoneFingerprint.peakWindowUTC !== "N/A" && (
-            <div className="aa-card" aria-label="Timezone fingerprint">
-              <p className="aa-section-heading">Timezone Fingerprint</p>
-              <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                <span>Peak: <strong>{score.behavioralProfile.timezoneFingerprint.peakWindowUTC}</strong> UTC</span>
-                <span>Dead zone: {score.behavioralProfile.timezoneFingerprint.deadZoneUTC} UTC</span>
-                <span>{score.behavioralProfile.timezoneFingerprint.is24x7 ? "24/7 bot operation" : score.behavioralProfile.timezoneFingerprint.inference}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Risk Flags ── */}
-      {score.flags.length > 0 && (
-        <div className={`aa-flags-section aa-reveal aa-delay-4${r}`} aria-label="Risk flags">
-          <p className="aa-flags-label">Risk Signals: {score.flags.length} detected</p>
-          <div className="aa-flags-list" role="list">
-            {score.flags.map((flag, i) => (
-              <div key={i} className="aa-reveal" style={{ transitionDelay: `${i * 60}ms` }}>
-                <FlagCard flag={flag} />
-              </div>
-            ))}
           </div>
-        </div>
-      )}
-
-      {/* ── Anomaly Signals ── */}
-      {score.anomalies.length > 0 && (
-        <div ref={anomaliesReveal} className="aa-anomalies-panel" aria-label="Anomaly signals">
-          <p className="aa-section-heading">
-            Anomaly Signals
-            <span className="aa-anomaly-count">{score.anomalies.length}</span>
-          </p>
-          <ul className="aa-anomaly-list" role="list">
-            {score.anomalies.map((anomaly, i) => (
-              <li key={i} className="aa-anomaly-item" role="listitem">
-                <span className="aa-anomaly-marker" aria-hidden="true" />
-                <span className="aa-anomaly-text">{anomaly}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* ── Fun Fact ── */}
-      {score.funFact && (
-        <div ref={funFactReveal} className="aa-fun-fact" aria-label="Agent fun fact">
-          <span className="aa-fun-fact-icon" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 16v-4M12 8h.01" />
-            </svg>
-          </span>
-          <p className="aa-fun-fact-text">{score.funFact}</p>
-        </div>
-      )}
-    </div>
+        )}
+        {profile.timezoneFingerprint.peakWindowUTC !== "N/A" && (
+          <div className="aa-insights-cell">
+            <p className="aa-section-heading">Timezone Fingerprint</p>
+            <div className="aa-insights-detail">
+              <span>Peak: <strong>{profile.timezoneFingerprint.peakWindowUTC}</strong> UTC</span>
+              <span>Dead zone: {profile.timezoneFingerprint.deadZoneUTC} UTC</span>
+              <span>{profile.timezoneFingerprint.is24x7 ? "24/7 bot operation" : profile.timezoneFingerprint.inference}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

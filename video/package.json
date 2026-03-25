@@ -1,0 +1,22 @@
+{
+  "name": "agent-auditor-demo",
+  "private": true,
+  "scripts": {
+    "start": "npx remotion studio",
+    "build": "npx remotion render src/index.ts Main out/demo.mp4",
+    "build:social": "npx remotion render src/index.ts Social out/hook-social.mp4",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.259",
+    "@remotion/google-fonts": "^4.0.259",
+    "@remotion/transitions": "4.0.259",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "4.0.259"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.1",
+    "typescript": "^5.5.0"
+  }
+}
