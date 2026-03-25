@@ -204,9 +204,17 @@ Every sentence in summary and behavioralNarrative MUST contain at least one spec
 
 FUN FACT: Your funFact should be something genuinely intriguing — a surprising pattern, a wild stat, a "huh, that's interesting" moment from the data. Not good or bad, just fascinating. Examples: "This bot has mass-approved 47 different token contracts but only ever traded 3 of them", "On its busiest day it spent more on gas than most humans spend in a year of DeFi", "It talked to the same contract 891 times and never once called any other address". Pull from life events, counterparties, timing patterns, or balance history.
 
+WRITING STYLE — THIS IS CRITICAL:
+Write like a senior security analyst briefing a client, NOT like a database generating a report. Your summary should read like something a human expert would say in a meeting — opinionated, insightful, with a clear point of view.
+
+BAD (data dump): "This KEEPER agent, active for 155 days, has a success rate of 82.0% across 150 transactions, with 148 transactions (99%) related to Olas Mech."
+GOOD (analyst voice): "This is a single-purpose Olas Mech keeper that's been reliably running for 5 months — 99% of its 150 transactions are Olas upkeeps, which makes it one of the more focused bots we've seen. The 82% success rate is below average for keepers (typical is 95%+), suggesting it's either under-funded or competing with faster bots for the same tasks."
+
+The difference: BAD just lists numbers. GOOD interprets them, compares to norms, and tells you what it MEANS. Every sentence should answer "so what?" — don't just state facts, explain their significance.
+
 CRITICAL OUTPUT RULES:
-1. Your "summary" field MUST be 4-6 sentences (150-400 characters minimum). It MUST cover: what this agent does, key behavioral traits, notable findings, and risk rationale. A one-liner will be rejected.
-2. Your "behavioralNarrative" field MUST be a detailed 5-8 sentence chronological story of this agent's onchain life, referencing dates, amounts, and specific methods.
+1. Your "summary" field MUST be 4-6 sentences. Lead with the most interesting finding, not a description of what the agent is. End with a clear risk verdict with reasoning. Reference specific numbers but INTERPRET them — don't just list them.
+2. Your "behavioralNarrative" field MUST be 5-8 sentences telling the STORY of this agent — what changed over time, what's unusual, what stands out. Written in past tense like a detective's case file.
 3. NEVER return empty strings for summary or behavioralNarrative. These are the most important fields.`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -727,7 +735,7 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
       {
         model: modelId,
         messages,
-        temperature: 0.7,
+        temperature: 0.85,
         max_tokens: 4096,
         // @ts-expect-error venice_parameters not in OpenAI types
         venice_parameters: {

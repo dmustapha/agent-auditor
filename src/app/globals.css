@@ -435,12 +435,18 @@ body::before {
   color: var(--color-accent);
   margin-bottom: 16px;
 }
-.aa-section-title {
+.aa-section-header .aa-section-title {
   font-family: var(--font-body);
   font-size: 32px;
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.2;
+  border-bottom: none;
+  padding-bottom: 0;
+  display: block;
+}
+.aa-section-header .aa-section-title::before {
+  display: none;
 }
 .aa-section-divider {
   width: 80px;
@@ -1834,15 +1840,26 @@ body::before {
 .aa-card-secondary {
   background: var(--card-secondary-bg);
   border: 1px solid var(--card-secondary-border);
-  border-radius: var(--radius-md);
-  padding: var(--sp-4);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5);
+  position: relative;
+}
+/* Subtle top accent line for section distinction */
+.aa-card-secondary::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 24px;
+  right: 24px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, oklch(0.72 0.15 195 / 0.2) 30%, oklch(0.72 0.15 195 / 0.2) 70%, transparent);
 }
 
 /* ─── REDESIGNED LAYOUT ─── */
 .aa-result-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-6);
+  gap: var(--sp-8);
 }
 
 .aa-primary-grid {
@@ -1891,8 +1908,8 @@ body::before {
 .aa-hero-zone-summary .aa-summary-text {
   font-family: var(--font-body);
   font-size: var(--text-md);
-  line-height: 1.7;
-  color: var(--color-text-secondary);
+  line-height: 1.75;
+  color: var(--color-text-primary);
 }
 
 .aa-hero-zone-summary .aa-summary-label {
@@ -1952,15 +1969,25 @@ body::before {
   gap: var(--sp-3);
 }
 
-/* Section heading */
+/* Section heading — clear label with accent marker */
 .aa-section-title {
-  font-family: var(--font-body);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--color-text-muted);
+  letter-spacing: 0.12em;
+  color: var(--color-accent);
   margin-bottom: var(--sp-4);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid oklch(0.72 0.15 195 / 0.15);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.aa-section-title::before {
+  content: '//';
+  color: var(--color-accent-dim);
+  font-weight: 400;
 }
 
 /* Fun fact footer */
