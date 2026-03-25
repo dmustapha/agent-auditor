@@ -435,9 +435,9 @@ function normalizeVeniceResponse(
 
   // Resolve behavioralNarrative: replace generic fallbacks with data-driven summary
   const rawNarrative = (raw.behavioralNarrative as string | undefined) ?? "";
-  const GENERIC_NARRATIVE_PHRASES = ["mostly normal behavior", "minor anomalies", "behavioral analysis not available", "shows normal behavior", "no significant anomalies", "limited data", "insufficient data", "difficult to assess", "unable to determine", "not enough data", "making it difficult"];
+  const GENERIC_NARRATIVE_PHRASES = ["mostly normal behavior", "behavioral analysis not available", "shows normal behavior", "no significant anomalies"];
   const lowerNarrative = rawNarrative.toLowerCase();
-  const isGenericNarrative = !rawNarrative || rawNarrative.length < 40 || GENERIC_NARRATIVE_PHRASES.some(p => lowerNarrative.includes(p));
+  const isGenericNarrative = !rawNarrative || rawNarrative.length < 20 || GENERIC_NARRATIVE_PHRASES.some(p => lowerNarrative.includes(p));
   const behavioralNarrative = isGenericNarrative && metrics
     ? (() => {
         const protocols = metrics.protocolsUsed.filter(p => p !== "ERC20" && p !== "WETH");
@@ -465,7 +465,7 @@ function normalizeVeniceResponse(
     summary: (() => {
       const rawSummary = (raw.summary as string | undefined) ?? "";
       const lowerSummary = rawSummary.toLowerCase();
-      const isGenericSummary = !rawSummary || rawSummary.length < 60 || GENERIC_NARRATIVE_PHRASES.some(p => lowerSummary.includes(p));
+      const isGenericSummary = !rawSummary || rawSummary.length < 20 || GENERIC_NARRATIVE_PHRASES.some(p => lowerSummary.includes(p));
       if (isGenericSummary && metrics) {
         const protocols = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
         const protocolStr = protocols.length > 0 ? protocols.join(", ") : "various contracts";
@@ -711,7 +711,7 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
       {
         model: modelId,
         messages,
-        temperature: 0,
+        temperature: 0.7,
         max_tokens: 4096,
         // @ts-expect-error venice_parameters not in OpenAI types
         venice_parameters: {
@@ -732,13 +732,19 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
 
   const content = response.choices[0]?.message?.content;
   if (!content) throw new Error("Empty response from Venice");
+  console.log("[venice] Raw response length:", content.length);
+  console.log("[venice] Raw summary preview:", content.slice(0, 300));
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(extractFirstJsonObject(stripMarkdownFences(content)));
   } catch {
+    console.error("[venice] JSON parse failed. Raw content:", content.slice(0, 500));
     throw new Error("Venice returned invalid JSON. Please try again.");
   }
+  console.log("[venice] Parsed summary:", (parsed.summary as string)?.slice(0, 200));
+  console.log("[venice] Parsed summary length:", (parsed.summary as string)?.length);
   const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId, data.computedMetrics, data.transactions.length, data.coinBalanceHistory);
+  console.log("[venice] Final summary (post-normalize):", normalized.summary.slice(0, 200));
 
   return normalized;
 }
