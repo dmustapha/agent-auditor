@@ -874,6 +874,45 @@ body::after {
   outline-offset: -2px;
 }
 
+/* ─── TELEGRAM BANNER ─── */
+.aa-telegram-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 1rem;
+  padding: 0.75rem 1rem;
+  background: oklch(0.22 0.03 250);
+  border: 1px solid oklch(0.35 0.08 250);
+  border-radius: 10px;
+  text-decoration: none;
+  transition: background 0.2s, border-color 0.2s;
+}
+.aa-telegram-banner:hover {
+  background: oklch(0.26 0.05 250);
+  border-color: oklch(0.45 0.10 250);
+}
+.aa-telegram-banner svg {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  color: oklch(0.70 0.12 250);
+}
+.aa-telegram-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aa-telegram-banner-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.aa-telegram-banner-desc {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  line-height: 1.3;
+}
+
 .aa-sidebar-footer {
   padding: 1rem 1.25rem;
   border-top: 1px solid var(--color-border-subtle);
@@ -2798,6 +2837,8 @@ body::after {
   .aa-sidebar-footer {
     display: none;
   }
+
+  .aa-telegram-banner { display: none; }
 
   .aa-sidebar-panels { display: none; }
 
