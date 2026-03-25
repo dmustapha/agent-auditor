@@ -297,8 +297,507 @@ function fmtETH(value: number): string {
   return value.toFixed(0);
 }
 
-/** Build a comprehensive analyst briefing from structured data + behavioral profile.
- *  Structure: Headline → What it does → How it performs → Financial picture → Operational pattern → Watch for
+// ─────────────────────────────────────────────────────────────
+// Type-adaptive analyst summary system
+// Each agent type gets a narrative generator that tells its specific story.
+// ─────────────────────────────────────────────────────────────
+
+interface SummaryContext {
+  agentType: string;
+  typeName: string;
+  chainId: string;
+  score: number;
+  metrics: AgentMetrics;
+  bench: { successRate: number; txPerDay: number; gasPerTx: number };
+  protocols: readonly string[];
+  protocolStr: string;
+  flags: readonly TrustFlag[];
+  txCount: number;
+  profile?: BehavioralProfile;
+  ageStr: string;
+  ageDays: number | null;
+  successPct: string;
+  benchSuccessPct: string;
+  successComparison: string;
+  netFlow: number;
+  gasETH: string;
+  criticalFlags: readonly TrustFlag[];
+  mediumFlags: readonly TrustFlag[];
+}
+
+function buildSummaryContext(
+  agentType: string, chainId: string, score: number,
+  metrics: AgentMetrics, protocols: readonly string[],
+  flags: readonly TrustFlag[], txCount: number, profile?: BehavioralProfile,
+): SummaryContext {
+  const bench = TYPE_BENCHMARKS[agentType] ?? TYPE_BENCHMARKS.UNKNOWN;
+  const filteredProtocols = protocols.filter(p => p !== "ERC20" && p !== "WETH");
+  const protocolStr = filteredProtocols.length > 0 ? filteredProtocols.join(", ") : chainId + " contracts";
+  const typeName = agentType.replace(/_/g, " ").toLowerCase();
+  const ageDays = metrics.firstSeenTimestamp
+    ? Math.floor((Date.now() - metrics.firstSeenTimestamp) / 86_400_000)
+    : profile?.walletAgeDays ?? null;
+  const ageStr = ageDays !== null
+    ? ageDays > 365 ? `${Math.floor(ageDays / 365)}+ year` : `${ageDays}-day`
+    : "";
+  return {
+    agentType, typeName, chainId, score, metrics, bench, protocols,
+    protocolStr, flags, txCount, profile, ageStr, ageDays,
+    successPct: (metrics.successRate * 100).toFixed(1),
+    benchSuccessPct: (bench.successRate * 100).toFixed(0),
+    successComparison: compareToBenchmark(metrics.successRate, bench.successRate),
+    netFlow: Number(metrics.netFlowETH),
+    gasETH: formatETH(metrics.totalGasSpentWei),
+    criticalFlags: flags.filter(f => f.severity === "CRITICAL" || f.severity === "HIGH"),
+    mediumFlags: flags.filter(f => f.severity === "MEDIUM"),
+  };
+}
+
+// ─── Shared helpers used by all narrators ───
+
+// Friendly category names for non-technical users
+const FRIENDLY_CATEGORY: Record<string, string> = {
+  swapping: "token swaps",
+  lending: "lending",
+  borrowing: "borrowing",
+  lp_provision: "providing liquidity",
+  staking: "staking",
+  bridging: "cross-chain transfers",
+  governance: "governance votes",
+  keeper_ops: "automated maintenance",
+  oracle_ops: "data feeds",
+  nft_trading: "NFT trading",
+  transfers: "simple transfers",
+  contract_creation: "deploying contracts",
+  other: "other operations",
+};
+
+function describeActivities(ctx: SummaryContext): string {
+  const parts: string[] = [];
+  const activities = ctx.profile?.activityBreakdown;
+  if (activities && activities.length > 0) {
+    const sig = activities.filter(a => a.percentage >= 5);
+    if (sig.length > 0) {
+      // Build a plain-language activity summary
+      const primary = sig[0];
+      const primaryName = FRIENDLY_CATEGORY[primary.category] ?? primary.category.replace(/_/g, " ");
+      const primaryProtos = primary.protocols.filter(p => p !== "ERC20" && p !== "WETH");
+      let actLine = `Most of its activity (${primary.percentage}%) is ${primaryName}`;
+      if (primaryProtos.length > 0) actLine += ` using ${primaryProtos.join(" and ")}`;
+      actLine += ".";
+
+      if (sig.length > 1) {
+        const rest = sig.slice(1).map(a => {
+          const name = FRIENDLY_CATEGORY[a.category] ?? a.category.replace(/_/g, " ");
+          const protos = a.protocols.filter(p => p !== "ERC20" && p !== "WETH");
+          return `${name} (${a.percentage}%${protos.length > 0 ? ` on ${protos.join(", ")}` : ""})`;
+        });
+        actLine += ` It also does ${rest.join(", ")}.`;
+      }
+      parts.push(actLine);
+    }
+  }
+
+  // Who it interacts with most
+  const named = ctx.profile?.topCounterparties?.filter(c => c.name && !c.name.startsWith("Unknown"));
+  if (named && named.length > 0) {
+    const cpDescs = named.slice(0, 4).map(c => {
+      const vol = Number(c.volumeETH);
+      return vol > 0.01 ? `${c.name} (${fmtETH(vol)} ETH across ${c.txCount} interactions)` : `${c.name} (${c.txCount} interactions)`;
+    });
+    parts.push(`Interacts most with: ${cpDescs.join(", ")}.`);
+  }
+
+  // Protocol loyalty in plain language
+  if (ctx.profile?.protocolLoyalty && !ctx.profile.protocolLoyalty.toLowerCase().includes("unknown")) {
+    parts.push(ctx.profile.protocolLoyalty + ".");
+  }
+
+  // Tokens it works with
+  const tf = ctx.profile?.tokenFlowSummary;
+  if (tf) {
+    const tp: string[] = [];
+    if (tf.topTokens.length > 0) {
+      tp.push(`Most-used tokens: ${tf.topTokens.slice(0, 4).map(t => `${t.symbol} (${t.txCount} times)`).join(", ")}`);
+    }
+    if (tf.uniqueTokens > 3) tp.push(`${tf.uniqueTokens} different tokens total`);
+    const directionText = tf.netDirection === "inbound" ? "overall receives more tokens than it sends (accumulating)" : tf.netDirection === "outbound" ? "overall sends more tokens than it receives (distributing)" : "balanced token flow in and out";
+    tp.push(directionText);
+    parts.push(`${tp.join(". ")}.`);
+  }
+  return parts.join(" ");
+}
+
+function describeFinancials(ctx: SummaryContext): string {
+  const parts: string[] = [];
+  if (ctx.netFlow > 0.01 || ctx.netFlow < -0.01) {
+    if (ctx.netFlow > 0) {
+      parts.push(`This agent has earned more than it has spent — a net gain of +${fmtETH(ctx.netFlow)} ETH.${ctx.gasETH !== "0 ETH" ? ` Transaction fees cost ${ctx.gasETH}.` : ""}`);
+    } else {
+      parts.push(`This agent has spent more than it has received — a net loss of ${fmtETH(Math.abs(ctx.netFlow))} ETH.${ctx.gasETH !== "0 ETH" ? ` Transaction fees account for ${ctx.gasETH} of that.` : ""}`);
+    }
+  } else {
+    parts.push(`Very little money has moved through this agent — essentially break-even with ${fmtETH(ctx.netFlow)} ETH net.`);
+  }
+  const bs = ctx.profile?.balanceStory;
+  if (bs) {
+    const bp: string[] = [];
+    if (bs.trend === "accumulating") bp.push("its balance has been growing over time");
+    else if (bs.trend === "depleting") bp.push("its balance has been declining");
+    else if (bs.trend === "volatile") bp.push("its balance has fluctuated significantly");
+    if (bs.currentBalanceETH && Number(bs.currentBalanceETH) > 0) bp.push(`currently holds ${fmtETH(Number(bs.currentBalanceETH))} ETH`);
+    if (bs.peakBalanceETH && Number(bs.peakBalanceETH) > 0.01 && bs.drawdownFromPeak && bs.drawdownFromPeak !== "0%" && bs.drawdownFromPeak !== "-0%") {
+      bp.push(`down ${bs.drawdownFromPeak} from its peak of ${fmtETH(Number(bs.peakBalanceETH))} ETH`);
+    }
+    if (bp.length > 0) parts.push(bp.join(", ") + ".");
+  }
+  return parts.join(" ");
+}
+
+function describeReliability(ctx: SummaryContext): string {
+  const failedTx = ctx.txCount - Math.round(ctx.metrics.successRate * ctx.txCount);
+  const fd = ctx.profile?.failedTxAnalysis;
+  let line: string;
+  if (ctx.successComparison === "above" || ctx.successComparison === "in line with") {
+    line = `${ctx.successPct}% of its ${ctx.txCount} transactions succeed — that's ${ctx.successComparison === "above" ? "better" : "on par with"} the typical ${ctx.benchSuccessPct}% for similar agents.`;
+  } else {
+    line = `Only ${ctx.successPct}% of its ${ctx.txCount} transactions succeed, which is below the typical ${ctx.benchSuccessPct}% for this type of agent. ${failedTx} transactions failed`;
+    if (fd?.mostCommonReason && fd.mostCommonReason !== "Unknown") line += `, mostly due to ${fd.mostCommonReason.toLowerCase()}`;
+    line += ".";
+  }
+  // Gas efficiency in plain terms
+  const gasComp = compareToBenchmark(ctx.bench.gasPerTx, ctx.metrics.avgGasPerTx);
+  if (ctx.metrics.avgGasPerTx > 0) {
+    if (gasComp === "below" || gasComp === "well below") {
+      line += " It also pays higher transaction fees than average, suggesting inefficient execution.";
+    } else if (ctx.metrics.avgGasPerTx < ctx.bench.gasPerTx * 0.7) {
+      line += " Its transaction fees are well below average — efficiently managed.";
+    }
+  }
+  return line;
+}
+
+function describeTemporal(ctx: SummaryContext): string {
+  const parts: string[] = [];
+  if (ctx.metrics.txFrequencyPerDay < 0.1) {
+    parts.push(`This agent is barely active — less than 1 transaction per day. It may be paused, abandoned, or only triggered by rare events.`);
+  } else if (ctx.metrics.txFrequencyPerDay > 50) {
+    parts.push(`Highly active with ~${Math.round(ctx.metrics.txFrequencyPerDay)} transactions per day, interacting with ${ctx.metrics.uniqueCounterparties} different addresses.`);
+  } else {
+    parts.push(`Averages about ${ctx.metrics.txFrequencyPerDay.toFixed(1)} transactions per day across ${ctx.metrics.uniqueCounterparties} different addresses.`);
+  }
+  const dorm = ctx.profile?.longestDormancy;
+  if (dorm && dorm.days > 7) {
+    const lastSeen = ctx.metrics.lastSeenTimestamp ? Math.floor((Date.now() - ctx.metrics.lastSeenTimestamp) / 86_400_000) : null;
+    if (lastSeen !== null && lastSeen > 30) parts.push(`It hasn't been active in ${lastSeen} days and previously went silent for ${dorm.days} days — this could be a sign it's been shut down.`);
+    else if (dorm.days > 14) parts.push(`At one point it went quiet for ${dorm.days} days (${dorm.from} to ${dorm.to}), but has since come back online.`);
+  }
+  const tz = ctx.profile?.timezoneFingerprint;
+  if (tz) {
+    if (tz.is24x7) parts.push("It runs around the clock with no downtime — a sign of fully automated infrastructure.");
+    else if (tz.inference && tz.inference !== "Unknown") parts.push(`Activity pattern suggests ${tz.inference.toLowerCase()}, most active around ${tz.peakWindowUTC} UTC.`);
+  }
+  if (ctx.profile?.busiestDay && ctx.profile.busiestDay.txCount > 5) {
+    parts.push(`Its busiest day was ${ctx.profile.busiestDay.date} with ${ctx.profile.busiestDay.txCount} transactions.`);
+  }
+  return parts.join(" ");
+}
+
+function buildRiskLines(ctx: SummaryContext): string {
+  const parts: string[] = [];
+  if (ctx.criticalFlags.length > 0) {
+    parts.push(`Serious concerns: ${ctx.criticalFlags.map(f => f.description.toLowerCase()).join("; ")}.`);
+  }
+  if (ctx.mediumFlags.length > 0 && ctx.mediumFlags.length <= 3) {
+    parts.push(`Other flags: ${ctx.mediumFlags.map(f => f.description.toLowerCase()).join("; ")}.`);
+  } else if (ctx.mediumFlags.length > 3) {
+    parts.push(`${ctx.mediumFlags.length} additional concerns were flagged, including ${ctx.mediumFlags.slice(0, 2).map(f => f.description.toLowerCase()).join(" and ")}.`);
+  }
+  return parts.join(" ");
+}
+
+function buildWatchFor(ctx: SummaryContext): string {
+  if (ctx.criticalFlags.length > 0) return `Watch for: ${ctx.criticalFlags[0].description}. If this gets worse, it should be investigated immediately.`;
+  if (ctx.metrics.txFrequencyPerDay < 0.1) return "Watch for: if this agent starts transacting again, it could mean it's back online. If it stays quiet past 90 days, it's likely been permanently shut down.";
+  if (ctx.successComparison === "below" || ctx.successComparison === "well below") {
+    const threshold = Math.max(50, Math.round(ctx.bench.successRate * 100) - 15);
+    return `Watch for: if the success rate drops below ${threshold}%, this agent may need to be reconfigured or replaced.`;
+  }
+  if (ctx.netFlow < -5) return "Watch for: this agent is bleeding funds. At this rate, it could run out of money within weeks.";
+  return `Watch for: so far the pattern looks ${ctx.score >= 70 ? "healthy" : "okay"}. Keep an eye out for sudden changes in behavior or interactions with unfamiliar addresses.`;
+}
+
+// ─── Type-specific narrative generators ───
+// Each tells the STORY of what this type of agent does, adapted to what matters most.
+
+function narrativeKeeper(ctx: SummaryContext): string {
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} keeper agent on ${ctx.chainId}, working with ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+
+  // Keepers are like maintenance workers — they keep protocols running
+  const keeperActivities = ctx.profile?.activityBreakdown?.filter(a => a.category === "keeper_ops") ?? [];
+  const keeperPct = keeperActivities.reduce((s, a) => s + a.percentage, 0);
+  const otherActivities = ctx.profile?.activityBreakdown?.filter(a => a.category !== "keeper_ops" && a.percentage >= 5) ?? [];
+
+  const storyParts: string[] = [];
+  if (keeperPct > 0) {
+    const protos = keeperActivities.flatMap(a => a.protocols).filter(p => p !== "ERC20" && p !== "WETH");
+    storyParts.push(`A keeper is like a maintenance worker for DeFi — it performs routine tasks to keep protocols running smoothly. This one spends ${keeperPct}% of its time on these upkeep tasks${protos.length > 0 ? ` for ${protos.join(" and ")}` : ""}.`);
+  } else {
+    storyParts.push("Keepers are automated agents that perform routine maintenance for DeFi protocols — like keeping the lights on.");
+  }
+  if (otherActivities.length > 0) {
+    const others = otherActivities.map(a => `${FRIENDLY_CATEGORY[a.category] ?? a.category.replace(/_/g, " ")} (${a.percentage}%)`);
+    storyParts.push(`Besides maintenance, it also does ${others.join(", ")}.`);
+  }
+
+  const named = ctx.profile?.topCounterparties?.filter(c => c.name && !c.name.startsWith("Unknown"));
+  if (named && named.length > 0) {
+    storyParts.push(`It primarily serves: ${named.slice(0, 3).map(c => c.name).join(", ")}.`);
+  }
+
+  // Keepers typically run at a loss — explain this
+  let financialStory: string;
+  if (ctx.netFlow < -0.01) {
+    financialStory = `Like most keepers, this one spends more than it earns on-chain — ${fmtETH(Math.abs(ctx.netFlow))} ETH in net costs. This is normal because keepers are usually rewarded through separate token incentives or off-chain payments, not direct on-chain profit.${ctx.gasETH !== "0 ETH" ? ` Transaction fees alone cost ${ctx.gasETH}.` : ""}`;
+  } else if (ctx.netFlow > 0.01) {
+    financialStory = `Unusually, this keeper is making money on-chain: +${fmtETH(ctx.netFlow)} ETH. It may be receiving on-chain rewards or doing some opportunistic trading on the side.`;
+  } else {
+    financialStory = `Financially break-even — it's spending about as much as it receives, which is typical for well-managed keeper infrastructure.`;
+  }
+
+  const sections = [headline, storyParts.join(" "), describeReliability(ctx), financialStory, describeTemporal(ctx)];
+  const risk = buildRiskLines(ctx);
+  if (risk) sections.push(risk);
+  sections.push(buildWatchFor(ctx));
+  return sections.filter(s => s.length > 0).join("\n\n");
+}
+
+function narrativeDexTrader(ctx: SummaryContext): string {
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} DeFi trading agent on ${ctx.chainId}, active on ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+
+  const swapActivity = ctx.profile?.activityBreakdown?.filter(a => a.category === "swapping") ?? [];
+  const lpActivity = ctx.profile?.activityBreakdown?.filter(a => a.category === "lp_provision") ?? [];
+  const lendActivity = ctx.profile?.activityBreakdown?.filter(a => a.category === "lending" || a.category === "borrowing") ?? [];
+  const allActivities = ctx.profile?.activityBreakdown?.filter(a => a.percentage >= 5) ?? [];
+
+  const storyParts: string[] = [];
+
+  if (allActivities.length > 0) {
+    const strategies: string[] = [];
+    if (swapActivity.length > 0) {
+      const totalSwapPct = swapActivity.reduce((s, a) => s + a.percentage, 0);
+      const dexes = swapActivity.flatMap(a => a.protocols).filter(p => p !== "ERC20" && p !== "WETH");
+      strategies.push(`swapping tokens (${totalSwapPct}% of activity${dexes.length > 0 ? `, using ${dexes.join(" and ")}` : ""})`);
+    }
+    if (lpActivity.length > 0) {
+      const lpPct = lpActivity.reduce((s, a) => s + a.percentage, 0);
+      strategies.push(`providing liquidity to earn fees (${lpPct}%)`);
+    }
+    if (lendActivity.length > 0) {
+      const lendPct = lendActivity.reduce((s, a) => s + a.percentage, 0);
+      const platforms = lendActivity.flatMap(a => a.protocols).filter(p => p !== "ERC20" && p !== "WETH");
+      strategies.push(`lending and borrowing (${lendPct}%${platforms.length > 0 ? ` on ${platforms.join(", ")}` : ""})`);
+    }
+    const otherActs = allActivities.filter(a => !["swapping", "lp_provision", "lending", "borrowing"].includes(a.category));
+    if (otherActs.length > 0) {
+      strategies.push(...otherActs.map(a => `${FRIENDLY_CATEGORY[a.category] ?? a.category.replace(/_/g, " ")} (${a.percentage}%)`));
+    }
+    storyParts.push(`Here's what it does: ${strategies.join(", ")}.`);
+    if (strategies.length > 2) storyParts.push("This is a multi-strategy trader that diversifies across several DeFi activities.");
+  }
+
+  const tf = ctx.profile?.tokenFlowSummary;
+  if (tf && tf.topTokens.length > 0) {
+    const tokens = tf.topTokens.slice(0, 5).map(t => `${t.symbol} (${t.txCount} trades)`).join(", ");
+    storyParts.push(`Most-traded tokens: ${tokens}.`);
+    if (tf.uniqueTokens > 5) storyParts.push(`Works with ${tf.uniqueTokens} different tokens — a diversified portfolio.`);
+    const dirText = tf.netDirection === "inbound" ? "Overall, it's buying more than selling — building up positions." : tf.netDirection === "outbound" ? "Overall, it's selling more than buying — taking profits or exiting positions." : "Buys and sells are roughly balanced.";
+    storyParts.push(dirText);
+  }
+
+  let profitStory: string;
+  if (ctx.netFlow > 1) {
+    profitStory = `Is it profitable? Yes — this trader has earned +${fmtETH(ctx.netFlow)} ETH more than it spent${ctx.gasETH !== "0 ETH" ? ` (after ${ctx.gasETH} in fees)` : ""} across ${ctx.txCount} transactions.${ctx.netFlow > 10 ? " That's significant — suggesting either skill or favorable market timing." : ""}`;
+  } else if (ctx.netFlow > 0.01) {
+    profitStory = `Barely profitable: +${fmtETH(ctx.netFlow)} ETH net gain, but fees (${ctx.gasETH}) are eating into the margins.`;
+  } else if (ctx.netFlow < -1) {
+    profitStory = `This trader is losing money: ${fmtETH(Math.abs(ctx.netFlow))} ETH in net losses${ctx.gasETH !== "0 ETH" ? ` plus ${ctx.gasETH} in fees` : ""}. ${Math.abs(ctx.netFlow) > 5 ? "These are significant losses." : "Could be due to bad timing or losses from providing liquidity."}`;
+  } else {
+    profitStory = `Roughly break-even — not making or losing meaningful money. May be running a neutral strategy or settling profits elsewhere.`;
+  }
+
+  const named = ctx.profile?.topCounterparties?.filter(c => c.name && !c.name.startsWith("Unknown"));
+  if (named && named.length > 0) {
+    storyParts.push(`Trades mostly through: ${named.slice(0, 4).map(c => `${c.name} (${c.txCount} interactions)`).join(", ")}.`);
+  }
+
+  const sections = [headline, storyParts.join(" "), profitStory, describeReliability(ctx), describeTemporal(ctx)];
+  const risk = buildRiskLines(ctx);
+  if (risk) sections.push(risk);
+  sections.push(buildWatchFor(ctx));
+  return sections.filter(s => s.length > 0).join("\n\n");
+}
+
+function narrativeMEVBot(ctx: SummaryContext): string {
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} MEV bot on ${ctx.chainId}, operating on ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+
+  const storyParts: string[] = [];
+  storyParts.push("MEV bots are automated programs that profit by reordering, inserting, or front-running other people's transactions. They're controversial — they can increase costs for regular users.");
+
+  if (ctx.netFlow > 0.01) {
+    storyParts.push(`This one has extracted +${fmtETH(ctx.netFlow)} ETH in profit${ctx.gasETH !== "0 ETH" ? ` after spending ${ctx.gasETH} on fees` : ""}. ${ctx.netFlow > 5 ? "That's a significant haul — likely running large arbitrage or sandwich attacks." : "Moderate extraction — probably small-scale arbitrage."}`);
+  } else {
+    storyParts.push(`Currently unprofitable (${fmtETH(ctx.netFlow)} ETH net) — it may be losing bidding wars to faster bots or winding down operations.`);
+  }
+
+  storyParts.push(describeActivities(ctx));
+
+  const sections = [headline, storyParts.filter(s => s.length > 0).join(" "), describeReliability(ctx), describeTemporal(ctx)];
+  const risk = buildRiskLines(ctx);
+  if (risk) sections.push(risk);
+  sections.push(buildWatchFor(ctx));
+  return sections.filter(s => s.length > 0).join("\n\n");
+}
+
+function narrativeOracle(ctx: SummaryContext): string {
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} oracle agent on ${ctx.chainId}, providing data to ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+
+  const storyParts: string[] = [];
+  storyParts.push("Oracles are agents that feed real-world data (like prices) into blockchain protocols. They're critical infrastructure — if an oracle fails, the protocols depending on it can break.");
+
+  const tz = ctx.profile?.timezoneFingerprint;
+  if (tz?.is24x7) {
+    storyParts.push("This one runs around the clock without breaks — exactly what you'd want from a data feed.");
+  }
+
+  if (ctx.metrics.txFrequencyPerDay > 10) {
+    storyParts.push(`It pushes updates ~${Math.round(ctx.metrics.txFrequencyPerDay)} times per day — a high-frequency feed, likely tracking real-time prices.`);
+  } else if (ctx.metrics.txFrequencyPerDay > 1) {
+    storyParts.push(`Updates about ${ctx.metrics.txFrequencyPerDay.toFixed(1)} times per day — a steady data source.`);
+  } else {
+    storyParts.push(`Only updates about ${ctx.metrics.txFrequencyPerDay.toFixed(1)} times per day — may only trigger on specific events rather than regular intervals.`);
+  }
+  storyParts.push(describeActivities(ctx));
+
+  const sections = [headline, storyParts.join(" "), describeReliability(ctx), describeFinancials(ctx), describeTemporal(ctx)];
+  const risk = buildRiskLines(ctx);
+  if (risk) sections.push(risk);
+  sections.push(buildWatchFor(ctx));
+  return sections.filter(s => s.length > 0).join("\n\n");
+}
+
+function narrativeLiquidator(ctx: SummaryContext): string {
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} liquidation agent on ${ctx.chainId}, monitoring ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+
+  const storyParts: string[] = [];
+  storyParts.push("Liquidators watch lending protocols for loans that have become risky (when collateral drops too low). When they find one, they step in to close it and earn a reward. They help keep DeFi protocols solvent.");
+
+  if (ctx.netFlow > 0.01) {
+    storyParts.push(`This liquidator has earned +${fmtETH(ctx.netFlow)} ETH from its work. ${ctx.netFlow > 2 ? "That's significant — it's finding and closing large risky positions." : "Moderate earnings — may be competing with other liquidators."}`);
+  } else {
+    storyParts.push(`Currently not profitable (${fmtETH(ctx.netFlow)} ETH net) — it may be losing speed races to competing bots or targeting positions with thin rewards.`);
+  }
+  storyParts.push(describeActivities(ctx));
+
+  const sections = [headline, storyParts.join(" "), describeReliability(ctx), describeTemporal(ctx)];
+  const risk = buildRiskLines(ctx);
+  if (risk) sections.push(risk);
+  sections.push(buildWatchFor(ctx));
+  return sections.filter(s => s.length > 0).join("\n\n");
+}
+
+function narrativeBridgeRelayer(ctx: SummaryContext): string {
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} bridge relayer on ${ctx.chainId}, operating through ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+
+  const storyParts: string[] = [];
+  storyParts.push("Bridge relayers help move assets between different blockchains. They're the delivery trucks of crypto — making sure your tokens arrive on the other side when you use a bridge.");
+  storyParts.push(`This one has handled ${ctx.txCount} transactions across ${ctx.metrics.uniqueCounterparties} different addresses. ${ctx.metrics.uniqueCounterparties > 50 ? "It's a high-traffic relayer serving many users." : "A smaller operation with a focused user base."}`);
+  storyParts.push(describeActivities(ctx));
+
+  const sections = [headline, storyParts.join(" "), describeReliability(ctx), describeFinancials(ctx), describeTemporal(ctx)];
+  const risk = buildRiskLines(ctx);
+  if (risk) sections.push(risk);
+  sections.push(buildWatchFor(ctx));
+  return sections.filter(s => s.length > 0).join("\n\n");
+}
+
+function narrativeYieldOptimizer(ctx: SummaryContext): string {
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} yield optimizer on ${ctx.chainId}, managing positions on ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+
+  const storyParts: string[] = [];
+  storyParts.push("Yield optimizers are like automated fund managers — they move money between DeFi protocols to earn the best returns. They deposit, withdraw, swap, and rebalance to maximize earnings.");
+
+  const lpAct = ctx.profile?.activityBreakdown?.filter(a => a.category === "lp_provision" || a.category === "staking") ?? [];
+  const lendAct = ctx.profile?.activityBreakdown?.filter(a => a.category === "lending") ?? [];
+  const swapAct = ctx.profile?.activityBreakdown?.filter(a => a.category === "swapping") ?? [];
+
+  const strategies: string[] = [];
+  if (lpAct.length > 0) strategies.push(`providing liquidity and staking (${lpAct.reduce((s, a) => s + a.percentage, 0)}% of activity)`);
+  if (lendAct.length > 0) strategies.push(`lending for interest (${lendAct.reduce((s, a) => s + a.percentage, 0)}%)`);
+  if (swapAct.length > 0) strategies.push(`rebalancing via swaps (${swapAct.reduce((s, a) => s + a.percentage, 0)}%)`);
+
+  if (strategies.length > 0) {
+    storyParts.push(`Its strategy breakdown: ${strategies.join(", ")}. ${strategies.length > 2 ? "A multi-strategy approach, spreading risk across different yield sources." : ""}`);
+  }
+  storyParts.push(describeActivities(ctx));
+
+  if (ctx.netFlow > 0.01) {
+    storyParts.push(`So far it's earned +${fmtETH(ctx.netFlow)} ETH after fees. ${ctx.netFlow > 1 ? "Strong performance." : "Positive but modest — fees or market moves may be cutting into yields."}`);
+  } else {
+    storyParts.push(`Currently losing money (${fmtETH(Math.abs(ctx.netFlow))} ETH net loss). This can happen when liquidity provision loses value during price swings, or when the protocols it deposits into reduce their reward rates.`);
+  }
+
+  const sections = [headline, storyParts.filter(s => s.length > 0).join(" "), describeReliability(ctx), describeTemporal(ctx)];
+  const risk = buildRiskLines(ctx);
+  if (risk) sections.push(risk);
+  sections.push(buildWatchFor(ctx));
+  return sections.filter(s => s.length > 0).join("\n\n");
+}
+
+function narrativeGovernance(ctx: SummaryContext): string {
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} governance participant on ${ctx.chainId}, active in ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+
+  const govAct = ctx.profile?.activityBreakdown?.filter(a => a.category === "governance") ?? [];
+  const govPct = govAct.reduce((s, a) => s + a.percentage, 0);
+
+  const storyParts: string[] = [];
+  storyParts.push("Governance agents participate in protocol decision-making — voting on proposals, delegating voting power, or managing community treasuries.");
+  if (govPct > 0) {
+    storyParts.push(`${govPct}% of its activity is governance-related. ${govPct > 50 ? "This is primarily a governance-focused address." : "Governance is a side activity alongside its other on-chain operations."}`);
+  }
+  storyParts.push(describeActivities(ctx));
+
+  const sections = [headline, storyParts.join(" "), describeFinancials(ctx), describeReliability(ctx), describeTemporal(ctx)];
+  const risk = buildRiskLines(ctx);
+  if (risk) sections.push(risk);
+  sections.push(buildWatchFor(ctx));
+  return sections.filter(s => s.length > 0).join("\n\n");
+}
+
+function narrativeGeneric(ctx: SummaryContext): string {
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${ctx.typeName} on ${ctx.chainId}, operating across ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+
+  const sections = [headline, describeActivities(ctx), describeReliability(ctx), describeFinancials(ctx), describeTemporal(ctx)];
+  const risk = buildRiskLines(ctx);
+  if (risk) sections.push(risk);
+  sections.push(buildWatchFor(ctx));
+  return sections.filter(s => s.length > 0).join("\n\n");
+}
+
+const TYPE_NARRATOR: Record<string, (ctx: SummaryContext) => string> = {
+  KEEPER: narrativeKeeper,
+  DEX_TRADER: narrativeDexTrader,
+  MEV_BOT: narrativeMEVBot,
+  ORACLE: narrativeOracle,
+  LIQUIDATOR: narrativeLiquidator,
+  BRIDGE_RELAYER: narrativeBridgeRelayer,
+  YIELD_OPTIMIZER: narrativeYieldOptimizer,
+  GOVERNANCE: narrativeGovernance,
+  UNKNOWN: narrativeGeneric,
+};
+
+/** Build a type-adaptive analyst briefing.
+ *  Each agent type gets a narrator that tells its specific story.
  */
 function generateAnalystSummary(
   agentType: string,
@@ -313,218 +812,9 @@ function generateAnalystSummary(
 ): string {
   if (!metrics) return `Trust score: ${score}/100. Insufficient on-chain data for detailed analysis.`;
 
-  const bench = TYPE_BENCHMARKS[agentType] ?? TYPE_BENCHMARKS.UNKNOWN;
-  const filteredProtocols = protocols.filter(p => p !== "ERC20" && p !== "WETH");
-  const protocolStr = filteredProtocols.length > 0 ? filteredProtocols.join(", ") : chainId + " contracts";
-  const typeName = agentType.replace(/_/g, " ").toLowerCase();
-  const successPct = (metrics.successRate * 100).toFixed(1);
-  const benchSuccessPct = (bench.successRate * 100).toFixed(0);
-  const successComparison = compareToBenchmark(metrics.successRate, bench.successRate);
-
-  // ─── Part 1: Classification headline ───
-  const ageDays = metrics.firstSeenTimestamp
-    ? Math.floor((Date.now() - metrics.firstSeenTimestamp) / 86_400_000)
-    : profile?.walletAgeDays ?? null;
-  const ageStr = ageDays !== null
-    ? ageDays > 365 ? `${Math.floor(ageDays / 365)}+ year` : `${ageDays}-day`
-    : "";
-  const headline = `${ageStr ? ageStr + " " : ""}${typeName} on ${chainId}, operating across ${protocolStr}. Trust score: ${score}/100.`;
-
-  // ─── Part 2: What does this agent actually DO? ───
-  // This is what the user cares about most: activity breakdown, protocols, strategies
-  const activityLines: string[] = [];
-
-  // Activity breakdown: lending, borrowing, swapping, keeper ops, etc.
-  const activities = profile?.activityBreakdown;
-  if (activities && activities.length > 0) {
-    const significantActivities = activities.filter(a => a.percentage >= 5);
-    if (significantActivities.length > 0) {
-      const actDescs = significantActivities.map(a => {
-        const name = a.category.replace(/_/g, " ");
-        const protos = a.protocols.filter(p => p !== "ERC20" && p !== "WETH");
-        const protoNote = protos.length > 0 ? ` via ${protos.join(", ")}` : "";
-        return `${name} ${a.percentage}% (${a.txCount} txs${protoNote})`;
-      });
-      activityLines.push(`Activity breakdown: ${actDescs.join(", ")}.`);
-    }
-  }
-
-  // Top counterparties with volume
-  const namedCounterparties = profile?.topCounterparties?.filter(c => c.name && !c.name.startsWith("Unknown"));
-  if (namedCounterparties && namedCounterparties.length > 0) {
-    const cpDescs = namedCounterparties.slice(0, 4).map(c => {
-      const vol = Number(c.volumeETH);
-      const volStr = vol > 0.01 ? ` (${fmtETH(vol)} ETH, ${c.txCount} txs)` : ` (${c.txCount} txs)`;
-      return `${c.name}${volStr}`;
-    });
-    activityLines.push(`Primary counterparties: ${cpDescs.join(", ")}.`);
-  }
-
-  // Protocol loyalty
-  if (profile?.protocolLoyalty && !profile.protocolLoyalty.toLowerCase().includes("unknown")) {
-    activityLines.push(profile.protocolLoyalty + ".");
-  }
-
-  // Token flow — what tokens does it trade/move?
-  const tokenFlow = profile?.tokenFlowSummary;
-  if (tokenFlow) {
-    const tokenParts: string[] = [];
-    if (tokenFlow.topTokens.length > 0) {
-      const tokenDescs = tokenFlow.topTokens.slice(0, 4).map(t => `${t.symbol} (${t.txCount})`);
-      tokenParts.push(`tokens traded: ${tokenDescs.join(", ")}`);
-    }
-    if (tokenFlow.uniqueTokens > 3) {
-      tokenParts.push(`${tokenFlow.uniqueTokens} unique tokens touched`);
-    }
-    tokenParts.push(`net direction: ${tokenFlow.netDirection.replace(/_/g, " ")}`);
-    activityLines.push(`Token flow: ${tokenParts.join(", ")}.`);
-  }
-
-  // ─── Part 3: Performance & Reliability ───
-  const perfLines: string[] = [];
-
-  const failedTx = txCount - Math.round(metrics.successRate * txCount);
-  const failureDetail = profile?.failedTxAnalysis;
-  if (successComparison === "above" || successComparison === "in line with") {
-    perfLines.push(`Reliability is solid: ${successPct}% success rate across ${txCount} transactions, ${successComparison} the ${benchSuccessPct}% median for ${typeName}s.`);
-  } else {
-    let reliabilityLine = `Reliability concern: ${successPct}% success rate ${successComparison} the ${benchSuccessPct}% median for ${typeName}s, with ${failedTx} failed transactions`;
-    if (failureDetail && failureDetail.mostCommonReason && failureDetail.mostCommonReason !== "Unknown") {
-      reliabilityLine += ` — most commonly: ${failureDetail.mostCommonReason.toLowerCase()}`;
-    }
-    if (failureDetail && Number(BigInt(failureDetail.totalGasUnitsWasted)) > 100_000) {
-      reliabilityLine += ` (${Number(BigInt(failureDetail.totalGasUnitsWasted)).toLocaleString()} gas units wasted on failures)`;
-    }
-    perfLines.push(reliabilityLine + ".");
-  }
-
-  // Gas efficiency vs benchmark
-  const gasComparison = compareToBenchmark(bench.gasPerTx, metrics.avgGasPerTx); // inverted — lower gas is better
-  if (metrics.avgGasPerTx > 0) {
-    const avgGas = Math.round(metrics.avgGasPerTx).toLocaleString();
-    const benchGas = bench.gasPerTx.toLocaleString();
-    if (gasComparison === "below" || gasComparison === "well below") {
-      perfLines.push(`Gas efficiency is poor: ${avgGas} avg gas/tx vs ${benchGas} median — overpaying for execution.`);
-    } else if (metrics.avgGasPerTx < bench.gasPerTx * 0.7) {
-      perfLines.push(`Gas-optimized: ${avgGas} avg gas/tx, well below the ${benchGas} median.`);
-    }
-  }
-
-  // ─── Part 4: Financial picture ───
-  const finLines: string[] = [];
-  const netFlow = Number(metrics.netFlowETH);
-  const gasETH = formatETH(metrics.totalGasSpentWei);
-  const balStory = profile?.balanceStory;
-
-  if (netFlow > 0.01 || netFlow < -0.01) {
-    let finLine = netFlow > 0
-      ? `Profitable: +${fmtETH(netFlow)} ETH net inflow`
-      : `Unprofitable: ${fmtETH(netFlow)} ETH net outflow`;
-    if (gasETH !== "0 ETH") finLine += `, ${gasETH} spent on gas`;
-    finLines.push(finLine + ".");
-  } else {
-    finLines.push(`Financial footprint is minimal — ${fmtETH(netFlow)} ETH net flow, consistent with operational spending only.`);
-  }
-
-  if (balStory) {
-    const balParts: string[] = [];
-    if (balStory.trend !== "stable") balParts.push(`balance trend: ${balStory.trend}`);
-    if (balStory.currentBalanceETH && Number(balStory.currentBalanceETH) > 0) {
-      balParts.push(`current: ${fmtETH(Number(balStory.currentBalanceETH))} ETH`);
-    }
-    if (balStory.peakBalanceETH && Number(balStory.peakBalanceETH) > 0.01 && balStory.drawdownFromPeak && balStory.drawdownFromPeak !== "0%" && balStory.drawdownFromPeak !== "-0%") {
-      balParts.push(`peak: ${fmtETH(Number(balStory.peakBalanceETH))} ETH (${balStory.drawdownFromPeak} drawdown)`);
-    }
-    if (balParts.length > 0) finLines.push(`Balance: ${balParts.join(", ")}.`);
-  }
-
-  // ─── Part 5: Operational pattern ───
-  const opLines: string[] = [];
-
-  // Activity rate
-  const txPerDayComparison = compareToBenchmark(metrics.txFrequencyPerDay, bench.txPerDay);
-  if (metrics.txFrequencyPerDay < 0.1) {
-    opLines.push(`Near-dormant: ${metrics.txFrequencyPerDay.toFixed(2)} tx/day — this agent may be abandoned or paused.`);
-  } else {
-    opLines.push(`Pace: ${metrics.txFrequencyPerDay.toFixed(1)} tx/day (${txPerDayComparison} the ${bench.txPerDay} median), ${metrics.uniqueCounterparties} unique counterparties.`);
-  }
-
-  // Dormancy
-  const dormancy = profile?.longestDormancy;
-  if (dormancy && dormancy.days > 7) {
-    const lastSeen = metrics.lastSeenTimestamp
-      ? Math.floor((Date.now() - metrics.lastSeenTimestamp) / 86_400_000)
-      : null;
-    if (lastSeen !== null && lastSeen > 30) {
-      opLines.push(`Last active ${lastSeen} days ago — dormant since after a ${dormancy.days}-day inactive stretch, suggesting possible abandonment.`);
-    } else if (dormancy.days > 14) {
-      opLines.push(`Longest dormancy: ${dormancy.days} days (${dormancy.from} → ${dormancy.to}), has since resumed.`);
-    }
-  }
-
-  // Timezone / schedule
-  const tz = profile?.timezoneFingerprint;
-  if (tz) {
-    if (tz.is24x7) {
-      opLines.push("Operates 24/7 with no sleep pattern — fully automated infrastructure.");
-    } else if (tz.inference && tz.inference !== "Unknown") {
-      opLines.push(`${tz.inference}, peak window ${tz.peakWindowUTC} UTC.`);
-    }
-  }
-
-  // Busiest day (shows burst capacity)
-  if (profile?.busiestDay && profile.busiestDay.txCount > 5) {
-    opLines.push(`Busiest day: ${profile.busiestDay.date} with ${profile.busiestDay.txCount} transactions.`);
-  }
-
-  // ─── Part 6: Risk signals ───
-  const riskLines: string[] = [];
-  const criticalFlags = flags.filter(f => f.severity === "CRITICAL" || f.severity === "HIGH");
-  const mediumFlags = flags.filter(f => f.severity === "MEDIUM");
-  if (criticalFlags.length > 0) {
-    riskLines.push(`Critical: ${criticalFlags.map(f => f.description.toLowerCase()).join("; ")}.`);
-  }
-  if (mediumFlags.length > 0 && mediumFlags.length <= 3) {
-    riskLines.push(`Flags: ${mediumFlags.map(f => f.description.toLowerCase()).join("; ")}.`);
-  } else if (mediumFlags.length > 3) {
-    riskLines.push(`${mediumFlags.length} medium-severity flags detected including: ${mediumFlags.slice(0, 2).map(f => f.description.toLowerCase()).join("; ")}.`);
-  }
-
-  // ─── Part 7: Forward look ───
-  let watchFor: string;
-  if (criticalFlags.length > 0) {
-    watchFor = `Watch for: ${criticalFlags[0].description}. Any escalation should trigger immediate review.`;
-  } else if (metrics.txFrequencyPerDay < 0.1) {
-    watchFor = "Watch for: resumed activity would signal recovery; continued inactivity past 90 days typically precedes permanent shutdown for this agent class.";
-  } else if (successComparison === "below" || successComparison === "well below") {
-    const threshold = Math.max(50, Math.round(bench.successRate * 100) - 15);
-    watchFor = `Watch for: declining success rate — if it drops below ${threshold}%, this agent may need reconfiguration or shutdown.`;
-  } else if (netFlow < -5) {
-    watchFor = "Watch for: accelerating outflows — sustained value extraction at this rate depletes reserves within weeks.";
-  } else {
-    watchFor = `Watch for: behavioral consistency — current pattern is ${score >= 70 ? "healthy" : "acceptable"}, monitor for sudden strategy changes or new counterparty exposure.`;
-  }
-
-  // ─── Assemble sections ───
-  const sections: string[] = [headline];
-
-  // Activity section (what it does)
-  if (activityLines.length > 0) sections.push(activityLines.join(" "));
-
-  // Performance + Financial (how well it's doing)
-  const combinedPerf = [...perfLines, ...finLines];
-  if (combinedPerf.length > 0) sections.push(combinedPerf.join(" "));
-
-  // Operational pattern (when/how it operates)
-  if (opLines.length > 0) sections.push(opLines.join(" "));
-
-  // Risk signals
-  if (riskLines.length > 0) sections.push(riskLines.join(" "));
-
-  // Forward look
-  sections.push(watchFor);
-
-  return sections.join("\n\n");
+  const ctx = buildSummaryContext(agentType, chainId, score, metrics, protocols, flags, txCount, profile);
+  const narrator = TYPE_NARRATOR[agentType] ?? narrativeGeneric;
+  return narrator(ctx);
 }
 
 function normalizeVeniceResponse(
