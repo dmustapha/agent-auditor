@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
-import { VT323, Space_Mono } from "next/font/google";
+import { Inter, VT323, Space_Mono } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
 
 const vt323 = VT323({
   weight: "400",
@@ -49,9 +55,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${vt323.variable} ${spaceMono.variable}`}>
+    <html lang="en" className={`${inter.variable} ${vt323.variable} ${spaceMono.variable}`}>
       <body className="bg-surface text-text-primary min-h-dvh antialiased">
-        <div className="aa-crt-overlay" aria-hidden="true" />
         {children}
       </body>
     </html>
