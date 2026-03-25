@@ -277,7 +277,7 @@ export async function detectChainWithActivity(
   const results = await Promise.allSettled(
     chains.map(async (chainId) => {
       const config = getChainConfig(chainId);
-      const url = `${config.blockscoutUrl}/addresses/${address}`;
+      const url = `${config.blockscoutUrl}/addresses/${address}/counters`;
       const res = await rateLimitedFetch(chainId, url);
       const data: { transactions_count?: string } = await res.json();
       const count = parseInt(data.transactions_count ?? "0");
@@ -304,7 +304,7 @@ export async function detectAllChainsWithActivity(
   const results = await Promise.allSettled(
     chains.map(async (chainId) => {
       const config = getChainConfig(chainId);
-      const url = `${config.blockscoutUrl}/addresses/${address}`;
+      const url = `${config.blockscoutUrl}/addresses/${address}/counters`;
       const res = await rateLimitedFetch(chainId, url);
       const data: { transactions_count?: string } = await res.json();
       const count = parseInt(data.transactions_count ?? "0");
