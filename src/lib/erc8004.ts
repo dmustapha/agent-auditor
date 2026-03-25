@@ -336,17 +336,26 @@ export async function getAgentFeedback(
 /**
  * Discover newly registered agents on a specific chain since a block number.
  */
+// Max block range per getLogs call — free RPCs reject large ranges (Optimism: ~10k limit)
+const MAX_LOG_RANGE = 5000n;
+
 export async function discoverNewAgents(
   chainId: ChainId,
   fromBlock: bigint,
 ): Promise<DiscoveredAgent[]> {
   const client = getPublicClient(chainId);
   const config = getChainConfig(chainId);
+  const latestBlock = await client.getBlockNumber();
+
+  // Cap range to avoid "block range too large" RPC errors
+  const safeFrom = latestBlock - fromBlock > MAX_LOG_RANGE
+    ? latestBlock - MAX_LOG_RANGE
+    : fromBlock;
 
   const logs = await client.getLogs({
     address: config.erc8004.identityRegistry,
     event: IDENTITY_REGISTRY_EVENTS[0],
-    fromBlock,
+    fromBlock: safeFrom,
     toBlock: "latest",
   });
 

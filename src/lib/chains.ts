@@ -86,7 +86,7 @@ export const SUPPORTED_CHAINS: Record<ChainId, ChainConfig> = {
     id: "polygon",
     name: "Polygon",
     blockscoutUrl: "https://polygon.blockscout.com/api/v2",
-    rpcUrl: "https://polygon-rpc.com",
+    rpcUrl: "https://polygon.llamarpc.com",
     chainIdNum: 137,
     erc8004: ERC8004,
     explorer: "https://polygonscan.com",
