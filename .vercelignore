@@ -1,0 +1,10 @@
+video/
+submission/
+.demo-state.json
+*.mp3
+*.mp4
+*.pptx
+*.dmg
+docs/
+render.yaml
+Dockerfile.worker
