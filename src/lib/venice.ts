@@ -297,19 +297,21 @@ function fmtETH(value: number): string {
   return value.toFixed(0);
 }
 
-/** Build a comprehensive analyst briefing from structured data + behavioral profile. */
+/** Build a comprehensive analyst briefing from structured data + behavioral profile.
+ *  Structure: Headline → What it does → How it performs → Financial picture → Operational pattern → Watch for
+ */
 function generateAnalystSummary(
   agentType: string,
   chainId: string,
   score: number,
-  recommendation: string,
+  _recommendation: string,
   metrics: AgentMetrics | undefined,
   protocols: readonly string[],
   flags: readonly TrustFlag[],
   txCount: number,
   profile?: BehavioralProfile,
 ): string {
-  if (!metrics) return `Trust score: ${score}/100 (${recommendation}).`;
+  if (!metrics) return `Trust score: ${score}/100. Insufficient on-chain data for detailed analysis.`;
 
   const bench = TYPE_BENCHMARKS[agentType] ?? TYPE_BENCHMARKS.UNKNOWN;
   const filteredProtocols = protocols.filter(p => p !== "ERC20" && p !== "WETH");
@@ -326,132 +328,174 @@ function generateAnalystSummary(
   const ageStr = ageDays !== null
     ? ageDays > 365 ? `${Math.floor(ageDays / 365)}+ year` : `${ageDays}-day`
     : "";
+  const headline = `${ageStr ? ageStr + " " : ""}${typeName} on ${chainId}, operating across ${protocolStr}. Trust score: ${score}/100.`;
 
-  // Specialization from activity breakdown
-  const topActivity = profile?.activityBreakdown?.[0];
-  const specializationNote = topActivity && topActivity.percentage >= 80
-    ? `, specialized in ${topActivity.category.replace(/_/g, " ")} (${topActivity.percentage}% of transactions)`
-    : "";
+  // ─── Part 2: What does this agent actually DO? ───
+  // This is what the user cares about most: activity breakdown, protocols, strategies
+  const activityLines: string[] = [];
 
-  const headline = `${ageStr ? ageStr + " " : ""}${typeName} on ${chainId}, operating across ${protocolStr}${specializationNote}. Trust score: ${score}/100.`;
+  // Activity breakdown: lending, borrowing, swapping, keeper ops, etc.
+  const activities = profile?.activityBreakdown;
+  if (activities && activities.length > 0) {
+    const significantActivities = activities.filter(a => a.percentage >= 5);
+    if (significantActivities.length > 0) {
+      const actDescs = significantActivities.map(a => {
+        const name = a.category.replace(/_/g, " ");
+        const protos = a.protocols.filter(p => p !== "ERC20" && p !== "WETH");
+        const protoNote = protos.length > 0 ? ` via ${protos.join(", ")}` : "";
+        return `${name} ${a.percentage}% (${a.txCount} txs${protoNote})`;
+      });
+      activityLines.push(`Activity breakdown: ${actDescs.join(", ")}.`);
+    }
+  }
 
-  // ─── Part 2: Multi-facet analysis ───
-  const findings: string[] = [];
+  // Top counterparties with volume
+  const namedCounterparties = profile?.topCounterparties?.filter(c => c.name && !c.name.startsWith("Unknown"));
+  if (namedCounterparties && namedCounterparties.length > 0) {
+    const cpDescs = namedCounterparties.slice(0, 4).map(c => {
+      const vol = Number(c.volumeETH);
+      const volStr = vol > 0.01 ? ` (${fmtETH(vol)} ETH, ${c.txCount} txs)` : ` (${c.txCount} txs)`;
+      return `${c.name}${volStr}`;
+    });
+    activityLines.push(`Primary counterparties: ${cpDescs.join(", ")}.`);
+  }
 
-  // 2a. Reliability assessment
+  // Protocol loyalty
+  if (profile?.protocolLoyalty && !profile.protocolLoyalty.toLowerCase().includes("unknown")) {
+    activityLines.push(profile.protocolLoyalty + ".");
+  }
+
+  // Token flow — what tokens does it trade/move?
+  const tokenFlow = profile?.tokenFlowSummary;
+  if (tokenFlow) {
+    const tokenParts: string[] = [];
+    if (tokenFlow.topTokens.length > 0) {
+      const tokenDescs = tokenFlow.topTokens.slice(0, 4).map(t => `${t.symbol} (${t.txCount})`);
+      tokenParts.push(`tokens traded: ${tokenDescs.join(", ")}`);
+    }
+    if (tokenFlow.uniqueTokens > 3) {
+      tokenParts.push(`${tokenFlow.uniqueTokens} unique tokens touched`);
+    }
+    tokenParts.push(`net direction: ${tokenFlow.netDirection.replace(/_/g, " ")}`);
+    activityLines.push(`Token flow: ${tokenParts.join(", ")}.`);
+  }
+
+  // ─── Part 3: Performance & Reliability ───
+  const perfLines: string[] = [];
+
   const failedTx = txCount - Math.round(metrics.successRate * txCount);
   const failureDetail = profile?.failedTxAnalysis;
   if (successComparison === "above" || successComparison === "in line with") {
-    findings.push(`Reliability is solid: ${successPct}% success rate across ${txCount} transactions, ${successComparison} the ${benchSuccessPct}% median for ${typeName}s.`);
+    perfLines.push(`Reliability is solid: ${successPct}% success rate across ${txCount} transactions, ${successComparison} the ${benchSuccessPct}% median for ${typeName}s.`);
   } else {
-    let reliabilityLine = `Reliability is a concern: ${successPct}% success rate ${successComparison} the ${benchSuccessPct}% median for ${typeName}s, with ${failedTx} failed transactions`;
+    let reliabilityLine = `Reliability concern: ${successPct}% success rate ${successComparison} the ${benchSuccessPct}% median for ${typeName}s, with ${failedTx} failed transactions`;
     if (failureDetail && failureDetail.mostCommonReason && failureDetail.mostCommonReason !== "Unknown") {
-      reliabilityLine += ` — most commonly due to ${failureDetail.mostCommonReason.toLowerCase()}`;
+      reliabilityLine += ` — most commonly: ${failureDetail.mostCommonReason.toLowerCase()}`;
     }
     if (failureDetail && Number(BigInt(failureDetail.totalGasUnitsWasted)) > 100_000) {
-      reliabilityLine += `, wasting ${Number(BigInt(failureDetail.totalGasUnitsWasted)).toLocaleString()} gas units`;
+      reliabilityLine += ` (${Number(BigInt(failureDetail.totalGasUnitsWasted)).toLocaleString()} gas units wasted on failures)`;
     }
-    findings.push(reliabilityLine + ".");
+    perfLines.push(reliabilityLine + ".");
   }
 
-  // 2b. Financial health
+  // Gas efficiency vs benchmark
+  const gasComparison = compareToBenchmark(bench.gasPerTx, metrics.avgGasPerTx); // inverted — lower gas is better
+  if (metrics.avgGasPerTx > 0) {
+    const avgGas = Math.round(metrics.avgGasPerTx).toLocaleString();
+    const benchGas = bench.gasPerTx.toLocaleString();
+    if (gasComparison === "below" || gasComparison === "well below") {
+      perfLines.push(`Gas efficiency is poor: ${avgGas} avg gas/tx vs ${benchGas} median — overpaying for execution.`);
+    } else if (metrics.avgGasPerTx < bench.gasPerTx * 0.7) {
+      perfLines.push(`Gas-optimized: ${avgGas} avg gas/tx, well below the ${benchGas} median.`);
+    }
+  }
+
+  // ─── Part 4: Financial picture ───
+  const finLines: string[] = [];
   const netFlow = Number(metrics.netFlowETH);
   const gasETH = formatETH(metrics.totalGasSpentWei);
-  const gasNote = gasETH === "0 ETH" ? "negligible gas costs" : `${gasETH} spent on gas`;
   const balStory = profile?.balanceStory;
-  if (netFlow > 0) {
-    let financialLine = `Net accumulator with +${fmtETH(netFlow)} ETH inflow and ${gasNote}`;
-    if (balStory && balStory.trend !== "stable") {
-      financialLine += ` — balance is ${balStory.trend}`;
-      if (balStory.drawdownFromPeak && balStory.drawdownFromPeak !== "0%" && balStory.drawdownFromPeak !== "-0%") {
-        financialLine += ` (${balStory.drawdownFromPeak} from peak of ${fmtETH(Number(balStory.peakBalanceETH))} ETH)`;
-      }
-    } else {
-      financialLine += " — the strategy is profitable";
-    }
-    findings.push(financialLine + ".");
-  } else if (netFlow < -1) {
-    let financialLine = `Net outflow of ${fmtETH(netFlow)} ETH with ${gasNote} — value is leaving this wallet`;
-    if (balStory && balStory.drawdownFromPeak) {
-      financialLine += ` (${balStory.drawdownFromPeak} from peak)`;
-    }
-    findings.push(financialLine + ".");
+
+  if (netFlow > 0.01 || netFlow < -0.01) {
+    let finLine = netFlow > 0
+      ? `Profitable: +${fmtETH(netFlow)} ETH net inflow`
+      : `Unprofitable: ${fmtETH(netFlow)} ETH net outflow`;
+    if (gasETH !== "0 ETH") finLine += `, ${gasETH} spent on gas`;
+    finLines.push(finLine + ".");
   } else {
-    findings.push(`Financial footprint is minimal: ${fmtETH(netFlow)} ETH net flow, ${gasNote} — consistent with operational spending only.`);
+    finLines.push(`Financial footprint is minimal — ${fmtETH(netFlow)} ETH net flow, consistent with operational spending only.`);
   }
 
-  // 2c. Behavioral pattern (activity rate + counterparties + timing)
+  if (balStory) {
+    const balParts: string[] = [];
+    if (balStory.trend !== "stable") balParts.push(`balance trend: ${balStory.trend}`);
+    if (balStory.currentBalanceETH && Number(balStory.currentBalanceETH) > 0) {
+      balParts.push(`current: ${fmtETH(Number(balStory.currentBalanceETH))} ETH`);
+    }
+    if (balStory.peakBalanceETH && Number(balStory.peakBalanceETH) > 0.01 && balStory.drawdownFromPeak && balStory.drawdownFromPeak !== "0%" && balStory.drawdownFromPeak !== "-0%") {
+      balParts.push(`peak: ${fmtETH(Number(balStory.peakBalanceETH))} ETH (${balStory.drawdownFromPeak} drawdown)`);
+    }
+    if (balParts.length > 0) finLines.push(`Balance: ${balParts.join(", ")}.`);
+  }
+
+  // ─── Part 5: Operational pattern ───
+  const opLines: string[] = [];
+
+  // Activity rate
   const txPerDayComparison = compareToBenchmark(metrics.txFrequencyPerDay, bench.txPerDay);
   if (metrics.txFrequencyPerDay < 0.1) {
-    findings.push(`Activity is near-dormant at ${metrics.txFrequencyPerDay.toFixed(2)} tx/day, suggesting the agent may be abandoned or paused.`);
+    opLines.push(`Near-dormant: ${metrics.txFrequencyPerDay.toFixed(2)} tx/day — this agent may be abandoned or paused.`);
   } else {
-    let behaviorLine = `Operating at ${metrics.txFrequencyPerDay.toFixed(1)} tx/day (${txPerDayComparison} the ${bench.txPerDay} median) across ${metrics.uniqueCounterparties} counterparties`;
-    // Add top counterparty names if resolved
-    const namedCounterparties = profile?.topCounterparties?.filter(c => c.name && !c.name.startsWith("Unknown"));
-    if (namedCounterparties && namedCounterparties.length > 0) {
-      const topNames = namedCounterparties.slice(0, 3).map(c => c.name!);
-      behaviorLine += ` — primarily interacting with ${topNames.join(", ")}`;
-    }
-    findings.push(behaviorLine + ".");
+    opLines.push(`Pace: ${metrics.txFrequencyPerDay.toFixed(1)} tx/day (${txPerDayComparison} the ${bench.txPerDay} median), ${metrics.uniqueCounterparties} unique counterparties.`);
   }
 
-  // 2d. Temporal pattern — dormancy, timezone, lifecycle
+  // Dormancy
   const dormancy = profile?.longestDormancy;
-  const tz = profile?.timezoneFingerprint;
-  const temporalParts: string[] = [];
   if (dormancy && dormancy.days > 7) {
     const lastSeen = metrics.lastSeenTimestamp
       ? Math.floor((Date.now() - metrics.lastSeenTimestamp) / 86_400_000)
       : null;
     if (lastSeen !== null && lastSeen > 30) {
-      temporalParts.push(`Last active ${lastSeen} days ago after a ${dormancy.days}-day dormancy period, suggesting possible abandonment`);
-    } else if (dormancy.days > 30) {
-      temporalParts.push(`Experienced a ${dormancy.days}-day dormancy (${dormancy.from} → ${dormancy.to}) but has since resumed activity`);
+      opLines.push(`Last active ${lastSeen} days ago — dormant since after a ${dormancy.days}-day inactive stretch, suggesting possible abandonment.`);
+    } else if (dormancy.days > 14) {
+      opLines.push(`Longest dormancy: ${dormancy.days} days (${dormancy.from} → ${dormancy.to}), has since resumed.`);
     }
   }
+
+  // Timezone / schedule
+  const tz = profile?.timezoneFingerprint;
   if (tz) {
     if (tz.is24x7) {
-      temporalParts.push("operates 24/7 with no discernible sleep pattern, consistent with automated infrastructure");
+      opLines.push("Operates 24/7 with no sleep pattern — fully automated infrastructure.");
     } else if (tz.inference && tz.inference !== "Unknown") {
-      temporalParts.push(`${tz.inference.toLowerCase()}, peak activity window ${tz.peakWindowUTC} UTC`);
+      opLines.push(`${tz.inference}, peak window ${tz.peakWindowUTC} UTC.`);
     }
   }
-  if (temporalParts.length > 0) {
-    findings.push(temporalParts.map((p, i) => i === 0 ? p.charAt(0).toUpperCase() + p.slice(1) : p).join("; ") + ".");
+
+  // Busiest day (shows burst capacity)
+  if (profile?.busiestDay && profile.busiestDay.txCount > 5) {
+    opLines.push(`Busiest day: ${profile.busiestDay.date} with ${profile.busiestDay.txCount} transactions.`);
   }
 
-  // 2e. Protocol loyalty and token flow
-  const loyaltyParts: string[] = [];
-  if (profile?.protocolLoyalty && !profile.protocolLoyalty.toLowerCase().includes("unknown")) {
-    loyaltyParts.push(profile.protocolLoyalty);
-  }
-  const tokenFlow = profile?.tokenFlowSummary;
-  if (tokenFlow && tokenFlow.uniqueTokens > 1) {
-    const dominant = tokenFlow.dominantToken;
-    if (dominant && dominant.txCount > 5) {
-      loyaltyParts.push(`dominant token is ${dominant.symbol} (${dominant.txCount} transactions), net flow direction: ${tokenFlow.netDirection.replace(/_/g, " ")}`);
-    }
-  }
-  if (loyaltyParts.length > 0) {
-    findings.push(loyaltyParts.join(". ") + ".");
-  }
-
-  // 2f. Risk signals from flags
+  // ─── Part 6: Risk signals ───
+  const riskLines: string[] = [];
   const criticalFlags = flags.filter(f => f.severity === "CRITICAL" || f.severity === "HIGH");
+  const mediumFlags = flags.filter(f => f.severity === "MEDIUM");
   if (criticalFlags.length > 0) {
-    const flagDescs = criticalFlags.slice(0, 2).map(f => f.description.toLowerCase());
-    findings.push(`Risk signals: ${flagDescs.join("; ")}.`);
+    riskLines.push(`Critical: ${criticalFlags.map(f => f.description.toLowerCase()).join("; ")}.`);
+  }
+  if (mediumFlags.length > 0 && mediumFlags.length <= 3) {
+    riskLines.push(`Flags: ${mediumFlags.map(f => f.description.toLowerCase()).join("; ")}.`);
+  } else if (mediumFlags.length > 3) {
+    riskLines.push(`${mediumFlags.length} medium-severity flags detected including: ${mediumFlags.slice(0, 2).map(f => f.description.toLowerCase()).join("; ")}.`);
   }
 
-  // ─── Part 3: Forward look ───
+  // ─── Part 7: Forward look ───
   let watchFor: string;
   if (criticalFlags.length > 0) {
     watchFor = `Watch for: ${criticalFlags[0].description}. Any escalation should trigger immediate review.`;
   } else if (metrics.txFrequencyPerDay < 0.1) {
-    const dormDays = dormancy?.days ?? 0;
-    watchFor = dormDays > 60
-      ? "Watch for: resumed activity would signal recovery; continued inactivity past 90 days typically precedes permanent shutdown for this agent class."
-      : "Watch for: resumed activity — if dormancy extends beyond 90 days, this agent is likely abandoned.";
+    watchFor = "Watch for: resumed activity would signal recovery; continued inactivity past 90 days typically precedes permanent shutdown for this agent class.";
   } else if (successComparison === "below" || successComparison === "well below") {
     const threshold = Math.max(50, Math.round(bench.successRate * 100) - 15);
     watchFor = `Watch for: declining success rate — if it drops below ${threshold}%, this agent may need reconfiguration or shutdown.`;
@@ -461,7 +505,26 @@ function generateAnalystSummary(
     watchFor = `Watch for: behavioral consistency — current pattern is ${score >= 70 ? "healthy" : "acceptable"}, monitor for sudden strategy changes or new counterparty exposure.`;
   }
 
-  return `${headline}\n\n${findings.join(" ")}\n\n${watchFor}`;
+  // ─── Assemble sections ───
+  const sections: string[] = [headline];
+
+  // Activity section (what it does)
+  if (activityLines.length > 0) sections.push(activityLines.join(" "));
+
+  // Performance + Financial (how well it's doing)
+  const combinedPerf = [...perfLines, ...finLines];
+  if (combinedPerf.length > 0) sections.push(combinedPerf.join(" "));
+
+  // Operational pattern (when/how it operates)
+  if (opLines.length > 0) sections.push(opLines.join(" "));
+
+  // Risk signals
+  if (riskLines.length > 0) sections.push(riskLines.join(" "));
+
+  // Forward look
+  sections.push(watchFor);
+
+  return sections.join("\n\n");
 }
 
 function normalizeVeniceResponse(
