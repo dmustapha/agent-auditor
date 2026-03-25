@@ -281,9 +281,9 @@ function compareToBenchmark(value: number, median: number): string {
 
 function formatETH(wei: string): string {
   const eth = Number(BigInt(wei)) / 1e18;
-  if (eth === 0) return "0 ETH";
-  if (eth < 0.001) return `${eth.toFixed(6)} ETH`;
-  if (eth < 1) return `${eth.toFixed(4)} ETH`;
+  if (eth === 0 || eth < 0.000001) return "0 ETH";
+  if (eth < 0.001) return `${eth.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")} ETH`;
+  if (eth < 1) return `${eth.toFixed(4).replace(/0+$/, "").replace(/\.$/, "")} ETH`;
   return `${eth.toFixed(2)} ETH`;
 }
 
