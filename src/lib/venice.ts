@@ -5,6 +5,33 @@ import { sanitizeForPrompt } from "./sanitize";
 import { METHOD_REGISTRY } from "./agent-classifier";
 import { computeBreakdown } from "./breakdown";
 
+// Human-readable method names for AI analysis prompt
+const METHOD_NAMES: Record<string, string> = {
+  "0xa9059cbb": "transfer", "0x095ea7b3": "approve", "0x23b872dd": "transferFrom",
+  "0xd0e30db0": "WETH deposit", "0x2e1a7d4d": "WETH withdraw",
+  "0x7ff36ab5": "swapExactETHForTokens", "0x38ed1739": "swapExactTokensForTokens", "0x18cbafe5": "swapExactTokensForETH",
+  "0x414bf389": "exactInputSingle (swap)", "0xc04b8d59": "exactInput (multi-hop swap)", "0x5ae401dc": "multicall (batch swap)",
+  "0x617ba037": "deposit (supply collateral)", "0xa415bcad": "borrow", "0x69328dec": "withdraw", "0xe8eda9df": "repay",
+  "0xf2b9fdb8": "supply", "0xf3fef3a3": "withdraw",
+  "0xac9650d8": "multicall", "0xb66503cf": "supply", "0xa99aad89": "borrow", "0x20b76e81": "repay", "0x2644131b": "liquidate",
+  "0x90d25074": "swapExactTokenForPt", "0xdcb5e4b6": "addLiquiditySingleToken", "0x7b1a4f09": "redeemRewards",
+  "0x11d62ed7": "createOrder", "0xf242432a": "executeOrder", "0x0d4d1513": "createDeposit",
+  "0xe7a050aa": "depositIntoStrategy", "0x0dd8dd02": "queueWithdrawals", "0x54b2bf29": "completeQueuedWithdrawals",
+  "0xfa31de01": "dispatch (cross-chain msg)", "0x56d5d475": "process (relay msg)",
+  "0x7b939232": "deposit (bridge)", "0xe63d38ed": "fillRelay",
+  "0x12aa3caf": "swap (aggregated)", "0xe449022e": "uniswapV3Swap",
+  "0x6a761202": "execTransaction (multisig)",
+  "0x4c26a0b6": "requestNewRound", "0x50d25bcd": "latestAnswer", "0xb1dc65a4": "transmit (OCR2)", "0xc9807539": "transmit (OCR1)",
+  "0x1e83409a": "claim", "0x4585e33b": "performUpkeep", "0x4b64e492": "exec (automate)",
+  "0x1fad948c": "handleOps (account abstraction)", "0x765e827f": "handleAggregatedOps",
+  "0xaa6e8bd0": "settle (batch)", "0xec6cb13f": "setPreSignature",
+  "0x52bbbe29": "swap (single)", "0x945bcec9": "batchSwap",
+  "0x3df02124": "exchange", "0xa6417ed6": "exchange_multiple",
+  "0xa1903eab": "submit (stake ETH)", "0xf638e5e0": "requestWithdrawals",
+  "0xd6febde8": "buy (prediction)", "0xcecf2242": "redeemPositions",
+  "0xb94207d3": "request (AI mech)",
+};
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const VENICE_BASE_URL = "https://api.venice.ai/api/v1";
@@ -207,10 +234,24 @@ Your behavioralNarrative should read like a biography: when it started, what it 
 
 SUMMARY REQUIREMENTS:
 Your "summary" field MUST be a detailed 4-6 sentence analysis covering:
-1. What this agent primarily does (based on transaction patterns and detected protocols)
+1. What this agent primarily does — name the SPECIFIC DeFi actions (e.g., "swaps tokens on Uniswap V3", "supplies collateral to Aave V3 and borrows stablecoins", "executes keeper upkeeps for Chainlink Automation", "settles batch trades on CoW Protocol"). Use the METHOD FREQUENCY section to identify the actual function calls.
 2. Key behavioral characteristics (timing regularity, gas efficiency, counterparty diversity)
 3. Notable findings — both positive signals and risk indicators with specific evidence
 4. Risk assessment rationale — why you assigned this score, referencing specific data points
+
+TRANSACTION TYPE CLASSIFICATION (CRITICAL):
+You MUST describe the agent's activity in terms of WHAT IT ACTUALLY DOES on-chain. Look at the METHOD FREQUENCY section — each method tells you exactly what the agent does:
+- "swap", "exchange", "swapExactTokensForTokens" → DEX trading agent
+- "supply", "borrow", "repay", "withdraw" → Lending/borrowing agent
+- "liquidate" → Liquidation bot
+- "performUpkeep", "transmit" → Keeper/oracle bot
+- "deposit (bridge)", "fillRelay" → Bridge relayer
+- "depositIntoStrategy", "redeemRewards" → Yield farming agent
+- "execTransaction" → Multisig/governance operations
+- "buy (prediction)", "redeemPositions" → Prediction market agent
+
+Do NOT say vague things like "executes transactions" or "interacts with protocols" or "transfers various amounts." Say EXACTLY what the agent does: "This is a DeFi lending agent that supplies USDC as collateral on Aave V3 and borrows ETH, periodically repaying and re-supplying in a leveraged loop strategy."
+
 Do NOT return vague one-liners like "This agent appears to be legitimate" or "Agent shows normal behavior."
 Each sentence must reference specific data from the behavioral profile provided.`;
 
@@ -218,6 +259,22 @@ Each sentence must reference specific data from the behavioral profile provided.
 
 function stripMarkdownFences(raw: string): string {
   return raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+}
+
+/** Describe what the agent actually does based on type + protocols */
+function describeAgentActions(agentType: string, protocols: string[]): string {
+  const protocolStr = protocols.length > 0 ? protocols.join(" and ") : "DeFi protocols";
+  const TYPE_ACTIONS: Record<string, string> = {
+    KEEPER: `This automation bot executes keeper tasks and upkeeps on ${protocolStr}`,
+    ORACLE: `This oracle node transmits price feed data for ${protocolStr}`,
+    LIQUIDATOR: `This liquidation bot monitors and liquidates undercollateralized positions on ${protocolStr}`,
+    MEV_BOT: `This MEV bot extracts value through arbitrage and frontrunning across ${protocolStr}`,
+    BRIDGE_RELAYER: `This bridge relayer processes cross-chain message delivery and token transfers via ${protocolStr}`,
+    DEX_TRADER: `This trading agent executes token swaps and trades on ${protocolStr}`,
+    GOVERNANCE: `This governance participant executes multisig transactions and votes via ${protocolStr}`,
+    YIELD_OPTIMIZER: `This yield farming agent supplies liquidity and optimizes returns on ${protocolStr}`,
+  };
+  return TYPE_ACTIONS[agentType] ?? `This agent interacts with ${protocolStr}`;
 }
 
 function normalizeVeniceResponse(
@@ -367,7 +424,8 @@ function normalizeVeniceResponse(
 
   if (activityProfile) {
     if (isVagueActivity(activityProfile.primaryActivity)) {
-      activityProfile = { ...activityProfile, primaryActivity: `${resolvedType} operating on ${chainId} via ${resolvedProtocols.join(", ")}` };
+      const filteredProtocols = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
+      activityProfile = { ...activityProfile, primaryActivity: describeAgentActions(resolvedType, filteredProtocols) };
     }
     if (!activityProfile.strategies.length || activityProfile.strategies.every(s => s.toLowerCase().includes("unknown"))) {
       const actionVerb = resolvedType === "KEEPER" ? "Automating tasks via"
@@ -404,8 +462,9 @@ function normalizeVeniceResponse(
       : resolvedType === "GOVERNANCE" ? "Participating in governance on"
       : "Operating on";
     const protocolNames = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
+    const filteredProtoNames = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
     activityProfile = {
-      primaryActivity: `${resolvedType} operating on ${chainId} via ${resolvedProtocols.join(", ")}`,
+      primaryActivity: describeAgentActions(resolvedType, filteredProtoNames),
       strategies: protocolNames.length > 0 ? protocolNames.map(p => `${actionVerb} ${p}`) : ["Token transfers"],
       protocolBreakdown: protocolNames.map(p => ({ protocol: p, percentage: Math.round(100 / Math.max(protocolNames.length, 1)), action: `${actionVerb} ${p}` })),
       riskBehaviors: [],
@@ -421,13 +480,13 @@ function normalizeVeniceResponse(
   const behavioralNarrative = isGenericNarrative && metrics
     ? (() => {
         const protocols = metrics.protocolsUsed.filter(p => p !== "ERC20" && p !== "WETH");
-        const protocolStr = protocols.length > 0 ? protocols.join(", ") : "various contracts";
         const topContracts = metrics.mostCalledContracts?.slice(0, 3).map(c => `${c.slice(0, 8)}...`).join(", ") ?? "";
-        const ageDesc = metrics.firstSeenTimestamp && metrics.lastSeenTimestamp
+        const ageDesc = metrics.firstSeenTimestamp
           ? `Active since ${new Date(metrics.firstSeenTimestamp).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
           : "Recently active";
         const gasETH = (Number(BigInt(metrics.totalGasSpentWei)) / 1e18).toFixed(4);
-        return `${ageDesc}, this ${resolvedType} operates on ${chainId} via ${protocolStr}. It averages ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day with a ${(metrics.successRate * 100).toFixed(1)}% success rate across ${metrics.uniqueCounterparties} unique counterparties. ${topContracts ? `Most frequently called contracts: ${topContracts}. ` : ""}Net flow: ${metrics.netFlowETH} ETH, total gas spent: ${gasETH} ETH. Consistency score: ${metrics.consistencyScore.toFixed(2)}.`;
+        const actionSentence = describeAgentActions(resolvedType, protocols);
+        return `${ageDesc} on ${chainId}. ${actionSentence}. It averages ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day with a ${(metrics.successRate * 100).toFixed(1)}% success rate across ${metrics.uniqueCounterparties} unique counterparties. ${topContracts ? `Most frequently called contracts: ${topContracts}. ` : ""}Net flow: ${metrics.netFlowETH} ETH, total gas spent: ${gasETH} ETH. Consistency score: ${metrics.consistencyScore.toFixed(2)}.`;
       })()
     : (rawNarrative || "Behavioral analysis not available.");
 
@@ -454,7 +513,9 @@ function normalizeVeniceResponse(
           ? `averaging ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day`
           : "with sporadic activity";
         const riskLevel = score >= 70 ? "low risk profile" : score >= 40 ? "moderate risk indicators" : "elevated risk signals";
-        return `This ${resolvedType} operates on ${chainId} primarily through ${protocolStr}, ${intervalDesc}. It has interacted with ${metrics.uniqueCounterparties} unique counterparties with a ${(metrics.successRate * 100).toFixed(1)}% transaction success rate. Net flow of ${metrics.netFlowETH} ETH with ${gasETH} ETH spent on gas suggests ${Number(metrics.netFlowETH) >= 0 ? "accumulating" : "operational spending"} behavior. Overall ${riskLevel} with a score of ${score}/100.`;
+        // Build action description from agent type and protocols
+        const actionDesc = describeAgentActions(resolvedType, protocols);
+        return `${actionDesc} on ${chainId} via ${protocolStr}, ${intervalDesc}. It has interacted with ${metrics.uniqueCounterparties} unique counterparties with a ${(metrics.successRate * 100).toFixed(1)}% transaction success rate. Net flow of ${metrics.netFlowETH} ETH with ${gasETH} ETH spent on gas suggests ${Number(metrics.netFlowETH) >= 0 ? "accumulating" : "operational spending"} behavior. Overall ${riskLevel} with a score of ${score}/100.`;
       }
       return rawSummary || `Score: ${score}/100`;
     })(),
@@ -618,8 +679,10 @@ Implementation: ${sanitizedData.addressInfo.implementationAddress ?? "N/A"}
 ${sortedMethods.map(([sel, count]) => {
     const pct = ((count / totalMethodCalls) * 100).toFixed(0);
     const known = METHOD_REGISTRY[sel];
-    const typeStr = known?.type ? ` ${known.type}` : "";
-    return `${sel}${known ? ` (${known.protocol}${typeStr})` : ""}: ${count} calls (${pct}%)`;
+    const methodName = METHOD_NAMES[sel];
+    const typeStr = known?.type ? ` [${known.type}]` : "";
+    const nameStr = methodName ? ` → ${methodName}` : "";
+    return `${sel}${known ? ` ${known.protocol}${nameStr}${typeStr}` : ""}: ${count} calls (${pct}%)`;
   }).join("\n")}
 ` : "";
 
