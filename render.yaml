@@ -18,6 +18,6 @@ services:
       - key: BLOCKLIST_CONTRACT_ADDRESS
         sync: false
       - key: NEXT_PUBLIC_USE_TESTNET
-        value: "true"
+        value: "false"
       - key: LOOP_INTERVAL_MS
-        value: "300000"
+        value: "600000"
