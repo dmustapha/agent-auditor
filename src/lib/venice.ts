@@ -202,7 +202,12 @@ Replace every banned phrase with a SPECIFIC data reference. Instead of "primaril
 
 Every sentence in summary and behavioralNarrative MUST contain at least one specific number from the provided data.
 
-FUN FACT: Your funFact should be something genuinely intriguing — a surprising pattern, a wild stat, a "huh, that's interesting" moment from the data. Not good or bad, just fascinating. Examples: "This bot has mass-approved 47 different token contracts but only ever traded 3 of them", "On its busiest day it spent more on gas than most humans spend in a year of DeFi", "It talked to the same contract 891 times and never once called any other address". Pull from life events, counterparties, timing patterns, or balance history.`;
+FUN FACT: Your funFact should be something genuinely intriguing — a surprising pattern, a wild stat, a "huh, that's interesting" moment from the data. Not good or bad, just fascinating. Examples: "This bot has mass-approved 47 different token contracts but only ever traded 3 of them", "On its busiest day it spent more on gas than most humans spend in a year of DeFi", "It talked to the same contract 891 times and never once called any other address". Pull from life events, counterparties, timing patterns, or balance history.
+
+CRITICAL OUTPUT RULES:
+1. Your "summary" field MUST be 4-6 sentences (150-400 characters minimum). It MUST cover: what this agent does, key behavioral traits, notable findings, and risk rationale. A one-liner will be rejected.
+2. Your "behavioralNarrative" field MUST be a detailed 5-8 sentence chronological story of this agent's onchain life, referencing dates, amounts, and specific methods.
+3. NEVER return empty strings for summary or behavioralNarrative. These are the most important fields.`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -433,12 +438,14 @@ function normalizeVeniceResponse(
     };
   }
 
-  // Resolve behavioralNarrative: replace generic fallbacks with data-driven summary
-  const rawNarrative = (raw.behavioralNarrative as string | undefined) ?? "";
-  const GENERIC_NARRATIVE_PHRASES = ["mostly normal behavior", "behavioral analysis not available", "shows normal behavior", "no significant anomalies"];
-  const lowerNarrative = rawNarrative.toLowerCase();
-  const isGenericNarrative = !rawNarrative || rawNarrative.length < 20 || GENERIC_NARRATIVE_PHRASES.some(p => lowerNarrative.includes(p));
-  const behavioralNarrative = isGenericNarrative && metrics
+  // Resolve behavioralNarrative — prefer Venice AI output, fallback only when truly empty
+  const rawNarrative = (raw.behavioralNarrative as string | undefined)
+    ?? (raw.narrative as string | undefined)
+    ?? (raw.behavioral_narrative as string | undefined)
+    ?? "";
+  const behavioralNarrative = rawNarrative.trim().length > 10
+    ? rawNarrative.trim()
+    : metrics
     ? (() => {
         const protocols = metrics.protocolsUsed.filter(p => p !== "ERC20" && p !== "WETH");
         const topContracts = metrics.mostCalledContracts?.slice(0, 3).map(c => `${c.slice(0, 8)}...`).join(", ") ?? "";
@@ -449,7 +456,7 @@ function normalizeVeniceResponse(
         const actionSentence = describeAgentActions(resolvedType, protocols);
         return `${ageDesc} on ${chainId}. ${actionSentence}. It averages ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day with a ${(metrics.successRate * 100).toFixed(1)}% success rate across ${metrics.uniqueCounterparties} unique counterparties. ${topContracts ? `Most frequently called contracts: ${topContracts}. ` : ""}Net flow: ${metrics.netFlowETH} ETH, total gas spent: ${gasETH} ETH. Consistency score: ${metrics.consistencyScore.toFixed(2)}.`;
       })()
-    : (rawNarrative || "Behavioral analysis not available.");
+    : "Behavioral analysis not available.";
 
   return {
     agentAddress: (raw.agentAddress as string | undefined) ?? address,
@@ -463,10 +470,19 @@ function normalizeVeniceResponse(
     },
     flags,
     summary: (() => {
-      const rawSummary = (raw.summary as string | undefined) ?? "";
-      const lowerSummary = rawSummary.toLowerCase();
-      const isGenericSummary = !rawSummary || rawSummary.length < 20 || GENERIC_NARRATIVE_PHRASES.some(p => lowerSummary.includes(p));
-      if (isGenericSummary && metrics) {
+      // Check alternate field names Venice models sometimes use
+      const rawSummary = (raw.summary as string | undefined)
+        ?? (raw.analysis as string | undefined)
+        ?? (raw.analysisSummary as string | undefined)
+        ?? (raw.analysis_summary as string | undefined)
+        ?? "";
+      console.log("[venice] rawSummary extracted:", rawSummary.slice(0, 100), "| length:", rawSummary.length);
+      // Only fall back to deterministic template when Venice returned NOTHING
+      if (rawSummary.trim().length > 10) {
+        return rawSummary.trim();
+      }
+      // Venice returned empty/near-empty — build from metrics
+      if (metrics) {
         const protocols = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
         const protocolStr = protocols.length > 0 ? protocols.join(", ") : "various contracts";
         const gasETH = (Number(BigInt(metrics.totalGasSpentWei)) / 1e18).toFixed(4);
@@ -474,8 +490,8 @@ function normalizeVeniceResponse(
           ? `averaging ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day`
           : "with sporadic activity";
         const riskLevel = score >= 70 ? "low risk profile" : score >= 40 ? "moderate risk indicators" : "elevated risk signals";
-        // Build action description from agent type and protocols
         const actionDesc = describeAgentActions(resolvedType, protocols);
+        console.log("[venice] FALLBACK triggered — Venice returned empty summary");
         return `${actionDesc} on ${chainId} via ${protocolStr}, ${intervalDesc}. It has interacted with ${metrics.uniqueCounterparties} unique counterparties with a ${(metrics.successRate * 100).toFixed(1)}% transaction success rate. Net flow of ${metrics.netFlowETH} ETH with ${gasETH} ETH spent on gas suggests ${Number(metrics.netFlowETH) >= 0 ? "accumulating" : "operational spending"} behavior. Overall ${riskLevel} with a score of ${score}/100.`;
       }
       return rawSummary || `Score: ${score}/100`;
