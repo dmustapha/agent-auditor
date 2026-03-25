@@ -446,10 +446,15 @@ function ScoreRing({
 // ─── Hero Summary ───────────────────────────────────────────────────────────
 
 function HeroSummary({ summary, timestamp }: { summary: string; timestamp: string }) {
+  const paragraphs = summary.split(/\n\n+/).filter(Boolean);
   return (
     <div className="aa-hero-zone-summary">
       <p className="aa-summary-label">Analysis Summary</p>
-      <p className="aa-summary-text">{summary}</p>
+      <div className="aa-summary-text">
+        {paragraphs.map((p, i) => (
+          <p key={i} className={i === paragraphs.length - 1 ? "aa-summary-watch" : undefined}>{p}</p>
+        ))}
+      </div>
       <p className="aa-summary-timestamp">Analyzed {formatTimestamp(timestamp)}</p>
     </div>
   );

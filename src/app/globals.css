@@ -1912,6 +1912,23 @@ body::before {
   color: var(--color-text-primary);
 }
 
+.aa-hero-zone-summary .aa-summary-text p {
+  margin-bottom: var(--sp-3);
+}
+
+.aa-hero-zone-summary .aa-summary-text p:last-child {
+  margin-bottom: 0;
+}
+
+.aa-hero-zone-summary .aa-summary-watch {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding-top: var(--sp-2);
+  border-top: 1px solid oklch(0.72 0.15 195 / 0.15);
+}
+
 .aa-hero-zone-summary .aa-summary-label {
   font-size: var(--text-xs);
   text-transform: uppercase;
