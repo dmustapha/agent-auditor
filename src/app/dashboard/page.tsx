@@ -231,11 +231,15 @@ function Dashboard() {
     );
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 55_000);
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: trimmed, inputType, chain }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (!res.ok) {
         const errBody: AnalyzeErrorResponse = await res.json();
@@ -282,8 +286,12 @@ function Dashboard() {
 
       // Update URL permalink — stay on /dashboard
       router.replace(`/dashboard?address=${encodeURIComponent(uiScore.address)}&chain=${uiScore.chainId}`, { scroll: false });
-    } catch {
-      setError({ message: "Failed to connect to analysis service" });
+    } catch (err) {
+      const isAbort = err instanceof DOMException && err.name === "AbortError";
+      const msg = isAbort
+        ? "Analysis timed out — try selecting a specific chain instead of All Chains."
+        : err instanceof Error ? err.message : "Failed to connect to analysis service";
+      setError({ message: msg });
     } finally {
       stepTimersRef.current.forEach(clearTimeout);
       stepTimersRef.current = [];
