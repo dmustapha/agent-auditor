@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag, ActivityProfile, BehavioralProfile, SampleContext, EntityClassification, EntityType } from "./types";
+import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag, ActivityProfile, BehavioralProfile, SampleContext } from "./types";
 import { sanitizeForPrompt } from "./sanitize";
 import { METHOD_REGISTRY } from "./agent-classifier";
 import { computeBreakdown } from "./breakdown";
@@ -311,12 +311,15 @@ interface SummaryContext {
   gasETH: string;
   criticalFlags: readonly TrustFlag[];
   mediumFlags: readonly TrustFlag[];
+  lowCoverage: boolean;
+  totalTxCount: number;
 }
 
 function buildSummaryContext(
   agentType: string, chainId: string, score: number,
   metrics: AgentMetrics, protocols: readonly string[],
   flags: readonly TrustFlag[], txCount: number, profile?: BehavioralProfile,
+  sampleContext?: SampleContext,
 ): SummaryContext {
   const bench = TYPE_BENCHMARKS[agentType] ?? TYPE_BENCHMARKS.UNKNOWN;
   const filteredProtocols = protocols.filter(p =>
@@ -324,15 +327,18 @@ function buildSummaryContext(
   );
   const protocolStr = filteredProtocols.length > 0 ? filteredProtocols.join(", ") : chainId + " DeFi";
   const typeName = agentType.replace(/_/g, " ").toLowerCase();
-  const ageDays = metrics.firstSeenTimestamp
-    ? Math.floor((Date.now() - metrics.firstSeenTimestamp) / 86_400_000)
-    : profile?.walletAgeDays ?? null;
+  const isSampleDerived = sampleContext?.isSampleDerived && sampleContext.sampleCoveragePercent < 50;
+  const ageDays = isSampleDerived ? null
+    : metrics.firstSeenTimestamp
+      ? Math.floor((Date.now() - metrics.firstSeenTimestamp) / 86_400_000)
+      : profile?.walletAgeDays ?? null;
   const ageStr = ageDays !== null
     ? ageDays > 365 ? `${Math.floor(ageDays / 365)}+ year` : `${ageDays}-day`
     : "";
   return {
     agentType, typeName, chainId, score, metrics, bench, protocols,
-    protocolStr, flags, txCount, profile, ageStr, ageDays,
+    protocolStr, flags, txCount, profile, ageStr, ageDays, lowCoverage: !!isSampleDerived,
+    totalTxCount: sampleContext?.totalTransactionCount ?? txCount,
     successPct: (metrics.successRate * 100).toFixed(1),
     benchSuccessPct: (bench.successRate * 100).toFixed(0),
     successComparison: compareToBenchmark(metrics.successRate, bench.successRate),
@@ -470,13 +476,14 @@ function describeFinancials(ctx: SummaryContext): string {
 }
 
 function describeReliability(ctx: SummaryContext): string {
+  const txRef = ctx.lowCoverage ? `${ctx.txCount} sampled transactions` : `${ctx.txCount} transactions`;
   const failedTx = ctx.txCount - Math.round(ctx.metrics.successRate * ctx.txCount);
   const fd = ctx.profile?.failedTxAnalysis;
   let line: string;
   if (ctx.successComparison === "above" || ctx.successComparison === "in line with") {
-    line = `${ctx.successPct}% of its ${ctx.txCount} transactions succeed — that's ${ctx.successComparison === "above" ? "better" : "on par with"} the typical ${ctx.benchSuccessPct}% for similar agents.`;
+    line = `${ctx.successPct}% of its ${txRef} succeed — that's ${ctx.successComparison === "above" ? "better" : "on par with"} the typical ${ctx.benchSuccessPct}% for similar agents.`;
   } else {
-    line = `Only ${ctx.successPct}% of its ${ctx.txCount} transactions succeed, which is below the typical ${ctx.benchSuccessPct}% for this type of agent. ${failedTx} transactions failed`;
+    line = `Only ${ctx.successPct}% of its ${txRef} succeed, which is below the typical ${ctx.benchSuccessPct}% for this type of agent. ${failedTx} transactions failed`;
     if (fd?.mostCommonReason && fd.mostCommonReason !== "Unknown") line += `, mostly due to ${fd.mostCommonReason.toLowerCase()}`;
     line += ".";
   }
@@ -494,7 +501,10 @@ function describeReliability(ctx: SummaryContext): string {
 
 function describeTemporal(ctx: SummaryContext): string {
   const parts: string[] = [];
-  if (ctx.metrics.txFrequencyPerDay < 0.1) {
+  if (ctx.lowCoverage) {
+    // With low sample coverage, frequency metrics are unreliable — report scale instead
+    parts.push(`An established address with ${ctx.totalTxCount.toLocaleString()} total transactions, interacting with ${ctx.metrics.uniqueCounterparties} different addresses in the sampled window.`);
+  } else if (ctx.metrics.txFrequencyPerDay < 0.1) {
     parts.push(`This agent is barely active — less than 1 transaction per day. It may be paused, abandoned, or only triggered by rare events.`);
   } else if (ctx.metrics.txFrequencyPerDay > 50) {
     parts.push(`Highly active with ~${Math.round(ctx.metrics.txFrequencyPerDay)} transactions per day, interacting with ${ctx.metrics.uniqueCounterparties} different addresses.`);
@@ -512,7 +522,7 @@ function describeTemporal(ctx: SummaryContext): string {
     if (tz.is24x7) parts.push("It runs around the clock with no downtime — a sign of fully automated infrastructure.");
     else if (tz.inference && tz.inference !== "Unknown") parts.push(`Activity pattern suggests ${tz.inference.toLowerCase()}, most active around ${tz.peakWindowUTC} UTC.`);
   }
-  if (ctx.profile?.busiestDay && ctx.profile.busiestDay.txCount > 5) {
+  if (!ctx.lowCoverage && ctx.profile?.busiestDay && ctx.profile.busiestDay.txCount > 5) {
     parts.push(`Its busiest day was ${ctx.profile.busiestDay.date} with ${ctx.profile.busiestDay.txCount} transactions.`);
   }
   return parts.join(" ");
@@ -533,7 +543,7 @@ function buildRiskLines(ctx: SummaryContext): string {
 
 function buildWatchFor(ctx: SummaryContext): string {
   if (ctx.criticalFlags.length > 0) return `Watch for: ${ctx.criticalFlags[0].description}. If this gets worse, it should be investigated immediately.`;
-  if (ctx.metrics.txFrequencyPerDay < 0.1) return "Watch for: if this agent starts transacting again, it could mean it's back online. If it stays quiet past 90 days, it's likely been permanently shut down.";
+  if (!ctx.lowCoverage && ctx.metrics.txFrequencyPerDay < 0.1) return "Watch for: if this agent starts transacting again, it could mean it's back online. If it stays quiet past 90 days, it's likely been permanently shut down.";
   if (ctx.successComparison === "below" || ctx.successComparison === "well below") {
     const threshold = Math.max(50, Math.round(ctx.bench.successRate * 100) - 15);
     return `Watch for: if the success rate drops below ${threshold}%, this agent may need to be reconfigured or replaced.`;
@@ -632,7 +642,7 @@ function narrativeDexTrader(ctx: SummaryContext): string {
 
   let profitStory: string;
   if (ctx.netFlow > 1) {
-    profitStory = `Is it profitable? Yes — this trader has earned +${fmtETH(ctx.netFlow)} ETH more than it spent${ctx.gasETH !== "0 ETH" ? ` (after ${ctx.gasETH} in fees)` : ""} across ${ctx.txCount} transactions.${ctx.netFlow > 10 ? " That's significant — suggesting either skill or favorable market timing." : ""}`;
+    profitStory = `Is it profitable? Yes — this trader has earned +${fmtETH(ctx.netFlow)} ETH more than it spent${ctx.gasETH !== "0 ETH" ? ` (after ${ctx.gasETH} in fees)` : ""} across ${ctx.lowCoverage ? `${ctx.txCount} sampled` : `${ctx.txCount}`} transactions.${ctx.netFlow > 10 ? " That's significant — suggesting either skill or favorable market timing." : ""}`;
   } else if (ctx.netFlow > 0.01) {
     profitStory = `Barely profitable: +${fmtETH(ctx.netFlow)} ETH net gain, but fees (${ctx.gasETH}) are eating into the margins.`;
   } else if (ctx.netFlow < -1) {
@@ -685,7 +695,9 @@ function narrativeOracle(ctx: SummaryContext): string {
     storyParts.push("This one runs around the clock without breaks — exactly what you'd want from a data feed.");
   }
 
-  if (ctx.metrics.txFrequencyPerDay > 10) {
+  if (ctx.lowCoverage) {
+    storyParts.push(`It has ${ctx.totalTxCount.toLocaleString()} total transactions on record.`);
+  } else if (ctx.metrics.txFrequencyPerDay > 10) {
     storyParts.push(`It pushes updates ~${Math.round(ctx.metrics.txFrequencyPerDay)} times per day — a high-frequency feed, likely tracking real-time prices.`);
   } else if (ctx.metrics.txFrequencyPerDay > 1) {
     storyParts.push(`Updates about ${ctx.metrics.txFrequencyPerDay.toFixed(1)} times per day — a steady data source.`);
@@ -726,7 +738,7 @@ function narrativeBridgeRelayer(ctx: SummaryContext): string {
 
   const storyParts: string[] = [];
   storyParts.push("Bridge relayers help move assets between different blockchains. They're the delivery trucks of crypto — making sure your tokens arrive on the other side when you use a bridge.");
-  storyParts.push(`This one has handled ${ctx.txCount} transactions across ${ctx.metrics.uniqueCounterparties} different addresses. ${ctx.metrics.uniqueCounterparties > 50 ? "It's a high-traffic relayer serving many users." : "A smaller operation with a focused user base."}`);
+  storyParts.push(`This one has handled ${ctx.lowCoverage ? `${ctx.totalTxCount.toLocaleString()} total` : `${ctx.txCount}`} transactions across ${ctx.metrics.uniqueCounterparties} different addresses. ${ctx.metrics.uniqueCounterparties > 50 ? "It's a high-traffic relayer serving many users." : "A smaller operation with a focused user base."}`);
   storyParts.push(describeActivities(ctx));
 
   const sections = [headline, storyParts.join(" "), describeReliability(ctx), describeFinancials(ctx), describeTemporal(ctx)];
@@ -824,10 +836,11 @@ function generateAnalystSummary(
   flags: readonly TrustFlag[],
   txCount: number,
   profile?: BehavioralProfile,
+  sampleContext?: SampleContext,
 ): string {
   if (!metrics) return `Trust score: ${score}/100. Insufficient on-chain data for detailed analysis.`;
 
-  const ctx = buildSummaryContext(agentType, chainId, score, metrics, protocols, flags, txCount, profile);
+  const ctx = buildSummaryContext(agentType, chainId, score, metrics, protocols, flags, txCount, profile, sampleContext);
   const narrator = TYPE_NARRATOR[agentType] ?? narrativeGeneric;
   return narrator(ctx);
 }
@@ -840,6 +853,7 @@ function normalizeVeniceResponse(
   totalTransactions?: number,
   coinBalanceHistory?: { value: string }[],
   behavioralProfile?: BehavioralProfile,
+  sampleContext?: SampleContext,
 ): TrustScore {
   // Handle alternate field names Venice models sometimes use
   const score = (raw.overallScore ?? raw.trustScore ?? raw.score ?? 50) as number;
@@ -1039,12 +1053,18 @@ function normalizeVeniceResponse(
     ? (() => {
         const protocols = metrics.protocolsUsed.filter(p => p !== "ERC20" && p !== "WETH");
         const topContracts = metrics.mostCalledContracts?.slice(0, 3).map(c => `${c.slice(0, 8)}...`).join(", ") ?? "";
-        const ageDesc = metrics.firstSeenTimestamp
-          ? `Active since ${new Date(metrics.firstSeenTimestamp).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
-          : "Recently active";
+        const isLowCov = sampleContext?.isSampleDerived && sampleContext.sampleCoveragePercent < 50;
+        const ageDesc = isLowCov
+          ? "Established address"
+          : metrics.firstSeenTimestamp
+            ? `Active since ${new Date(metrics.firstSeenTimestamp).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
+            : "Recently active";
         const gasETH = (Number(BigInt(metrics.totalGasSpentWei)) / 1e18).toFixed(4);
         const actionSentence = describeAgentActions(resolvedType, protocols);
-        return `${ageDesc} on ${chainId}. ${actionSentence}. It averages ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day with a ${(metrics.successRate * 100).toFixed(1)}% success rate across ${metrics.uniqueCounterparties} unique counterparties. ${topContracts ? `Most frequently called contracts: ${topContracts}. ` : ""}Net flow: ${metrics.netFlowETH} ETH, total gas spent: ${gasETH} ETH. Consistency score: ${metrics.consistencyScore.toFixed(2)}.`;
+        const freqDesc = isLowCov
+          ? `${(totalTransactions ?? 0).toLocaleString()} total transactions`
+          : `averages ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day`;
+        return `${ageDesc} on ${chainId}. ${actionSentence}. It ${freqDesc} with a ${(metrics.successRate * 100).toFixed(1)}% success rate across ${metrics.uniqueCounterparties} unique counterparties. ${topContracts ? `Most frequently called contracts: ${topContracts}. ` : ""}Net flow: ${metrics.netFlowETH} ETH, total gas spent: ${gasETH} ETH. Consistency score: ${metrics.consistencyScore.toFixed(2)}.`;
       })()
     : "Behavioral analysis not available.";
 
@@ -1060,7 +1080,7 @@ function normalizeVeniceResponse(
     },
     flags,
     // Always generate analyst-quality summary from structured data (never use Venice prose)
-    summary: generateAnalystSummary(resolvedType, chainId, score, recommendation, metrics, resolvedProtocols, flags, totalTransactions ?? 0, behavioralProfile),
+    summary: generateAnalystSummary(resolvedType, chainId, score, recommendation, metrics, resolvedProtocols, flags, totalTransactions ?? 0, behavioralProfile, sampleContext),
     recommendation: recommendation as "SAFE" | "CAUTION" | "BLOCKLIST",
     analysisTimestamp: (raw.analysisTimestamp as string | undefined) ?? new Date().toISOString(),
     agentType: finalAgentType,
@@ -1139,14 +1159,16 @@ export async function analyzeAgent(
   const modelId = model ?? PRIMARY_MODEL;
   const sanitizedData = sanitizeAgentDataForPrompt(data);
 
+  const sampleCtx = sanitizedData.computedMetrics?.sampleContext ?? sanitizedData.sampleContext;
   const metrics = sanitizedData.computedMetrics;
+  const lowCoverage = sampleCtx?.isSampleDerived && sampleCtx.sampleCoveragePercent < 50;
   const metricsSection = metrics ? `
 === COMPUTED METRICS ===
-Avg gas per tx: ${metrics.avgGasPerTx.toFixed(0)} | Total gas spent: ${(Number(metrics.totalGasSpentWei) / 1e18).toFixed(6)} ETH | Tx frequency: ${metrics.txFrequencyPerDay.toFixed(2)} tx/day
-Active hours UTC: [${metrics.activeHoursUTC.join(",")}]
+Avg gas per tx: ${metrics.avgGasPerTx.toFixed(0)} | Total gas spent: ${(Number(metrics.totalGasSpentWei) / 1e18).toFixed(6)} ETH | Tx frequency: ${lowCoverage ? `UNKNOWN (${metrics.txFrequencyPerDay.toFixed(2)} tx/day in sample only — DO NOT use as real frequency)` : `${metrics.txFrequencyPerDay.toFixed(2)} tx/day`}
+Active hours UTC: [${metrics.activeHoursUTC.join(",")}]${lowCoverage ? " (sample window only)" : ""}
 Success rate: ${(metrics.successRate * 100).toFixed(1)}% | Unique counterparties: ${metrics.uniqueCounterparties}
 Largest single tx: ${(Number(BigInt(metrics.largestSingleTxWei)) / 1e18).toFixed(6)} ETH | Nonce gaps: ${metrics.nonceGaps}
-First seen: ${metrics.firstSeenTimestamp ? new Date(metrics.firstSeenTimestamp).toISOString() : "N/A"} | Last seen: ${metrics.lastSeenTimestamp ? new Date(metrics.lastSeenTimestamp).toISOString() : "N/A"}
+First seen: ${lowCoverage ? `UNKNOWN — sample starts at ${metrics.firstSeenTimestamp ? new Date(metrics.firstSeenTimestamp).toISOString() : "N/A"} but this is NOT wallet creation date (only ${sampleCtx.sampleCoveragePercent}% of ${sampleCtx.totalTransactionCount.toLocaleString()} txs sampled)` : `${metrics.firstSeenTimestamp ? new Date(metrics.firstSeenTimestamp).toISOString() : "N/A"}`} | Last seen: ${metrics.lastSeenTimestamp ? new Date(metrics.lastSeenTimestamp).toISOString() : "N/A"}
 Pre-classified agent type: ${metrics.agentType} | ERC-4337: ${metrics.isERC4337}
 Most called contracts: ${metrics.mostCalledContracts.slice(0, 5).join(", ") || "N/A"}
 ` : "";
@@ -1212,7 +1234,6 @@ Implementation: ${sanitizedData.addressInfo.implementationAddress ?? "N/A"}
 ` : "";
 
   // ─── DATA WINDOW section (only when sample-derived) ───
-  const sampleCtx = sanitizedData.computedMetrics?.sampleContext;
   const dataWindowSection = sampleCtx?.isSampleDerived ? (() => {
     const coverage = sampleCtx.sampleCoveragePercent;
     let warning = "";
@@ -1303,13 +1324,14 @@ Current: ${profile.balanceStory.currentBalanceETH} ETH | Drawdown: ${profile.bal
 Trend: ${profile.balanceStory.trend}
 
 === AGENT BIOGRAPHY ===
-${sampleCtx?.isSampleDerived && sampleCtx.sampleCoveragePercent < 50
-  ? `Sample window: ${profile.sampleWindowDays ?? profile.walletAgeDays} days (NOT wallet age — only covers ${sampleCtx.sampleCoveragePercent}% of transactions)`
+${lowCoverage
+  ? `Wallet age: UNKNOWN (sample covers ${sampleCtx!.sampleCoveragePercent}% of ${sampleCtx!.totalTransactionCount.toLocaleString()} total txs — DO NOT write "X-day-old", write "established" or omit age entirely)
+Sample window: ${profile.sampleWindowDays ?? profile.walletAgeDays} days of recent activity`
   : `Wallet age: ${profile.walletAgeDays} days`} | Contracts deployed: ${profile.contractsDeployed}
 First action: ${profile.firstAction}
 Protocol loyalty: ${profile.protocolLoyalty}
-${profile.busiestDay ? `Busiest day: ${profile.busiestDay.date} (${profile.busiestDay.txCount} txs)` : ""}
-${profile.longestDormancy ? `Longest dormancy: ${profile.longestDormancy.days} days (${profile.longestDormancy.from} → ${profile.longestDormancy.to})` : ""}
+${profile.busiestDay ? `Busiest day${lowCoverage ? " (in sample)" : ""}: ${profile.busiestDay.date} (${profile.busiestDay.txCount} txs)` : ""}
+${profile.longestDormancy ? `Longest dormancy${lowCoverage ? " (in sample)" : ""}: ${profile.longestDormancy.days} days (${profile.longestDormancy.from} → ${profile.longestDormancy.to})` : ""}
 ` : "";
 
   const userMessage = `Analyze this ${sanitizedData.chainId.toUpperCase()} chain agent:
@@ -1370,7 +1392,8 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
   }
   console.log("[venice] Parsed summary:", (parsed.summary as string)?.slice(0, 200));
   console.log("[venice] Parsed summary length:", (parsed.summary as string)?.length);
-  const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId, data.computedMetrics, data.transactions.length, data.coinBalanceHistory, data.behavioralProfile);
+  const sampleCtxForSummary = data.computedMetrics?.sampleContext ?? data.sampleContext;
+  const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId, data.computedMetrics, data.transactions.length, data.coinBalanceHistory, data.behavioralProfile, sampleCtxForSummary);
   console.log("[venice] Final summary (post-normalize):", normalized.summary.slice(0, 200));
 
   return normalized;

@@ -288,6 +288,7 @@ function Dashboard() {
         recommendation: data.trustScore.recommendation,
         timestamp: Date.now(),
         agentType: data.trustScore.agentType,
+        entityType: data.entityType,
       });
 
       // Update URL permalink — stay on /dashboard

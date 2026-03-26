@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
         d.transactions.map(tx => ({ ...tx, chainId: d.chainId } as TransactionSummary & { chainId: string })),
       );
       // Sort by timestamp descending
-      mergedTransactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      mergedTransactions.sort((a, b) => b.timestamp - a.timestamp);
       const mergedTokenTransfers = allChainData.flatMap(d => d.tokenTransfers);
       const mergedContractCalls = allChainData.flatMap(d => d.contractCalls);
       const mergedCoinBalance = allChainData.flatMap(d => d.coinBalanceHistory ?? []);
@@ -210,6 +210,9 @@ export async function POST(request: NextRequest) {
       isERC8004Registered: effectiveAgentId !== null,
     });
 
+    // 4.3. Enrich data with entity classification + sample context for Venice prompt
+    const enrichedForVenice = { ...enrichedData, entityClassification, sampleContext: behavioralProfile.sampleContext };
+
     // 5. Analyze via Venice (or mock)
     let trustScore;
     if (USE_MOCK) {
@@ -233,7 +236,7 @@ export async function POST(request: NextRequest) {
 
       const client = createVeniceClient(apiKey);
       const model = await resolveModel(client);
-      const rawScore = await analyzeAgent(client, enrichedData, model);
+      const rawScore = await analyzeAgent(client, enrichedForVenice, model);
       trustScore = validateTrustScore(rawScore);
     }
 

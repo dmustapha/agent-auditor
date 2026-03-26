@@ -2,7 +2,7 @@ import type {
   TransactionSummary, TokenTransfer, ContractCall, CoinBalancePoint,
   BehavioralProfile, LifeEvent, ActivityCategory, ResolvedCounterparty,
   FailedTxAnalysis, TimezoneFingerprint, TokenFlowSummary, BalanceStory,
-  ChainId, SampleContext,
+  ChainId,
 } from "./types";
 import { METHOD_REGISTRY } from "./agent-classifier";
 import { resolveProtocolName } from "./protocol-registry";

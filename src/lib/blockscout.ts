@@ -223,10 +223,23 @@ export async function getAddressInfo(
         : "EOA",
       implementationAddress: (data.implementation_address as string) ?? null,
       ensName: (data.ens_domain_name as string) ?? null,
-      transactionsCount: Number(data.transactions_count) || 0,
+      transactionsCount: Number(data.transactions_count) || await getTransactionCountFromCounters(chainId, address),
     };
   } catch {
     return null;
+  }
+}
+
+/** Fallback: fetch tx count from /counters endpoint when /addresses returns null */
+async function getTransactionCountFromCounters(chainId: ChainId, address: string): Promise<number> {
+  try {
+    const config = getChainConfig(chainId);
+    const url = `${config.blockscoutUrl}/addresses/${address}/counters`;
+    const res = await rateLimitedFetch(chainId, url);
+    const data: { transactions_count?: string } = await res.json();
+    return parseInt(data.transactions_count ?? "0") || 0;
+  } catch {
+    return 0;
   }
 }
 

@@ -106,7 +106,7 @@ describe("classifyEntityType", () => {
     expect(result.primarySignal).toContain("protocol registry");
   });
 
-  test("contract name pattern → PROTOCOL_CONTRACT/DEFINITIVE", () => {
+  test("contract name pattern → PROTOCOL_CONTRACT/HIGH", () => {
     const result = classifyEntityType({
       address: "0xABC",
       transactions: makeTxs(10, "0xOTHER", "0xABC"),
@@ -115,7 +115,7 @@ describe("classifyEntityType", () => {
       isERC8004Registered: false,
     });
     expect(result.entityType).toBe("PROTOCOL_CONTRACT");
-    expect(result.confidence).toBe("DEFINITIVE");
+    expect(result.confidence).toBe("HIGH");
     expect(result.primarySignal).toContain("contract name");
   });
 
@@ -217,6 +217,40 @@ describe("classifyEntityType", () => {
     });
     expect(result.entityType).toBe("PROTOCOL_CONTRACT");
     expect(result.confidence).toBe("DEFINITIVE");
+  });
+
+  test("ERC-8004 beats low from-ratio heuristic", () => {
+    // Contract with 0% from-ratio BUT is ERC-8004 registered → agent wins
+    const txs = makeTxs(20, "0xOTHER", "0xABC");
+    const result = classifyEntityType({
+      address: "0xABC",
+      transactions: txs,
+      addressInfo: CONTRACT_ADDRESS_INFO,
+      isERC8004Registered: true,
+    });
+    expect(result.entityType).toBe("AUTONOMOUS_AGENT");
+    expect(result.confidence).toBe("DEFINITIVE");
+    expect(result.primarySignal).toBe("ERC-8004 registered");
+  });
+
+  test("Blockscout isContract=true but walletClassification says not a contract → uses humanScore", () => {
+    // Edge case: Blockscout flags as contract (e.g. vitalik.eth) but behavioral analysis disagrees
+    // Use moderate from-ratio (50%) so from-ratio heuristics don't fire first
+    const txs = [
+      ...makeTxs(10, "0xABC", "0xOTHER"),
+      ...makeTxs(10, "0xOTHER", "0xABC"),
+    ];
+    const contractButNotReally: AddressInfo = { ...CONTRACT_ADDRESS_INFO, isContract: true };
+    const notReallyContract: WalletClassification = { ...HIGH_HUMAN_WALLET, isDefinitelyContract: false, humanScore: 85 };
+    const result = classifyEntityType({
+      address: "0xABC",
+      transactions: txs,
+      addressInfo: contractButNotReally,
+      walletClassification: notReallyContract,
+      isERC8004Registered: false,
+    });
+    expect(result.entityType).toBe("USER_WALLET");
+    expect(result.confidence).toBe("MEDIUM");
   });
 
   test("undefined walletClassification → skips humanScore, falls to UNKNOWN", () => {

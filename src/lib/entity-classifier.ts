@@ -91,14 +91,26 @@ export function classifyEntityType(
     signals.push(`contract name: ${smartContractData.name}`);
     return {
       entityType: "PROTOCOL_CONTRACT",
-      confidence: "DEFINITIVE",
+      confidence: "HIGH",
       signals,
       fromRatio,
       primarySignal: `contract name: ${smartContractData.name}`,
     };
   }
 
-  // Step 3: Contract + low from ratio (requires >= 10 txs)
+  // Step 3: ERC-8004 registered (definitive — beats heuristics)
+  if (isERC8004Registered) {
+    signals.push("ERC-8004 registered");
+    return {
+      entityType: "AUTONOMOUS_AGENT",
+      confidence: "DEFINITIVE",
+      signals,
+      fromRatio,
+      primarySignal: "ERC-8004 registered",
+    };
+  }
+
+  // Step 4: Contract + low from ratio (requires >= 10 txs)
   if (isContract && transactions.length >= 10 && fromRatio <= 0.05) {
     const pct = (fromRatio * 100).toFixed(1);
     signals.push(`contract with low from ratio (${pct}%)`);
@@ -108,18 +120,6 @@ export function classifyEntityType(
       signals,
       fromRatio,
       primarySignal: `low from ratio: ${pct}%`,
-    };
-  }
-
-  // Step 4: ERC-8004 registered
-  if (isERC8004Registered) {
-    signals.push("ERC-8004 registered");
-    return {
-      entityType: "AUTONOMOUS_AGENT",
-      confidence: "DEFINITIVE",
-      signals,
-      fromRatio,
-      primarySignal: "ERC-8004 registered",
     };
   }
 
@@ -136,8 +136,9 @@ export function classifyEntityType(
     };
   }
 
-  // Steps 6-7: humanScore-based (requires walletClassification)
-  if (!isContract && walletClassification) {
+  // Steps 6-7: humanScore-based (requires walletClassification, skip for definite contracts)
+  const definitelyContract = walletClassification?.isDefinitelyContract ?? isContract;
+  if (!definitelyContract && walletClassification) {
     if (walletClassification.humanScore > 70) {
       signals.push(`human score: ${walletClassification.humanScore}/100`);
       return {
