@@ -115,7 +115,9 @@ export async function POST(request: NextRequest) {
     const cached = analysisCache.get(cacheKey);
     if (cached) return NextResponse.json(cached);
 
-    // 3. Fetch onchain data — multi-chain merge when chain=all
+    // 3. Fetch onchain data — start ETH price fetch in parallel to save time
+    const ethPricePromise = getETHPrice();
+
     let agentData;
     if (selectedChain === "all" && chainResults.length > 1) {
       // Fetch from all active chains in parallel (allSettled so one flaky chain doesn't kill the request)
@@ -154,7 +156,7 @@ export async function POST(request: NextRequest) {
       const fetchChain = chainResults.length === 1 ? chainResults[0].chainId as ChainId : resolved.chainId;
       agentData = await fetchAgentData(fetchChain, resolved.address);
     }
-    const ethPrice = await getETHPrice();
+    const ethPrice = await ethPricePromise;
 
     // 3.5. Compute behavioral profile (local analysis, no new external APIs)
     const behavioralProfile = await computeBehavioralProfile(
@@ -175,10 +177,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4.1. Discover agent ID via reverse lookup if not resolved
+    // 4.1. Discover agent ID via reverse lookup if not resolved (3s timeout — non-blocking)
     if (effectiveAgentId === null) {
       try {
-        const discoveredId = await findAgentByAddress(resolved.chainId, resolved.address);
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+        const discoveredId = await Promise.race([findAgentByAddress(resolved.chainId, resolved.address), timeout]);
         if (discoveredId !== null) {
           effectiveAgentId = discoveredId;
           try {
