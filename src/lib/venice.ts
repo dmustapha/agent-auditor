@@ -331,8 +331,10 @@ function buildSummaryContext(
   flags: readonly TrustFlag[], txCount: number, profile?: BehavioralProfile,
 ): SummaryContext {
   const bench = TYPE_BENCHMARKS[agentType] ?? TYPE_BENCHMARKS.UNKNOWN;
-  const filteredProtocols = protocols.filter(p => p !== "ERC20" && p !== "WETH");
-  const protocolStr = filteredProtocols.length > 0 ? filteredProtocols.join(", ") : chainId + " contracts";
+  const filteredProtocols = protocols.filter(p =>
+    p !== "ERC20" && p !== "WETH" && !p.startsWith("0x") && !p.startsWith("Contract ")
+  );
+  const protocolStr = filteredProtocols.length > 0 ? filteredProtocols.join(", ") : chainId + " DeFi";
   const typeName = agentType.replace(/_/g, " ").toLowerCase();
   const ageDays = metrics.firstSeenTimestamp
     ? Math.floor((Date.now() - metrics.firstSeenTimestamp) / 86_400_000)
@@ -372,6 +374,26 @@ const FRIENDLY_CATEGORY: Record<string, string> = {
   other: "other operations",
 };
 
+/** Detect spam/scam airdrop tokens by their name patterns */
+function isSpamToken(symbol: string): boolean {
+  if (!symbol) return true;
+  const s = symbol.toLowerCase();
+  // URL patterns (visit X, claim at X, .net, .com, .lat, etc.)
+  if (/https?:\/\/|\.com\b|\.net\b|\.io\b|\.lat\b|\.xyz\b|\.org\b/.test(s)) return true;
+  // Scam phrases
+  if (/claim|free|bonus|reward|winner|won \$|airdrop|visit \[/i.test(s)) return true;
+  // Dollar amounts in name ("$50,000", "$5000")
+  if (/\$\s*[\d,]+/.test(symbol)) return true;
+  // Emoji-heavy names (scam tokens love emojis)
+  const emojiCount = (symbol.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) ?? []).length;
+  if (emojiCount >= 2) return true;
+  // Very long names (legit tokens are short: ETH, USDC, WETH)
+  if (symbol.length > 30) return true;
+  // "null" placeholder
+  if (s === "null" || s === "undefined") return true;
+  return false;
+}
+
 function describeActivities(ctx: SummaryContext): string {
   const parts: string[] = [];
   const activities = ctx.profile?.activityBreakdown;
@@ -381,7 +403,7 @@ function describeActivities(ctx: SummaryContext): string {
       // Build a plain-language activity summary
       const primary = sig[0];
       const primaryName = FRIENDLY_CATEGORY[primary.category] ?? primary.category.replace(/_/g, " ");
-      const primaryProtos = primary.protocols.filter(p => p !== "ERC20" && p !== "WETH");
+      const primaryProtos = primary.protocols.filter(p => p !== "ERC20" && p !== "WETH" && !p.startsWith("0x") && !p.startsWith("Contract "));
       let actLine = `Most of its activity (${primary.percentage}%) is ${primaryName}`;
       if (primaryProtos.length > 0) actLine += ` using ${primaryProtos.join(" and ")}`;
       actLine += ".";
@@ -389,7 +411,7 @@ function describeActivities(ctx: SummaryContext): string {
       if (sig.length > 1) {
         const rest = sig.slice(1).map(a => {
           const name = FRIENDLY_CATEGORY[a.category] ?? a.category.replace(/_/g, " ");
-          const protos = a.protocols.filter(p => p !== "ERC20" && p !== "WETH");
+          const protos = a.protocols.filter(p => p !== "ERC20" && p !== "WETH" && !p.startsWith("0x") && !p.startsWith("Contract "));
           return `${name} (${a.percentage}%${protos.length > 0 ? ` on ${protos.join(", ")}` : ""})`;
         });
         actLine += ` It also does ${rest.join(", ")}.`;
@@ -413,14 +435,17 @@ function describeActivities(ctx: SummaryContext): string {
     parts.push(ctx.profile.protocolLoyalty + ".");
   }
 
-  // Tokens it works with
+  // Tokens it works with — filter out spam/scam airdrop tokens
   const tf = ctx.profile?.tokenFlowSummary;
   if (tf) {
     const tp: string[] = [];
-    if (tf.topTokens.length > 0) {
-      tp.push(`Most-used tokens: ${tf.topTokens.slice(0, 4).map(t => `${t.symbol} (${t.txCount} times)`).join(", ")}`);
+    const legitimateTokens = tf.topTokens.filter(t => !isSpamToken(t.symbol));
+    if (legitimateTokens.length > 0) {
+      tp.push(`Most-used tokens: ${legitimateTokens.slice(0, 4).map(t => `${t.symbol} (${t.txCount} times)`).join(", ")}`);
     }
-    if (tf.uniqueTokens > 3) tp.push(`${tf.uniqueTokens} different tokens total`);
+    const spamCount = tf.topTokens.length - legitimateTokens.length;
+    if (spamCount > 0) tp.push(`${spamCount} spam/scam token${spamCount > 1 ? "s" : ""} filtered out`);
+    if (tf.uniqueTokens > 3) tp.push(`${legitimateTokens.length > 0 ? tf.uniqueTokens - spamCount : tf.uniqueTokens} different tokens total`);
     const directionText = tf.netDirection === "inbound" ? "overall receives more tokens than it sends (accumulating)" : tf.netDirection === "outbound" ? "overall sends more tokens than it receives (distributing)" : "balanced token flow in and out";
     tp.push(directionText);
     parts.push(`${tp.join(". ")}.`);
