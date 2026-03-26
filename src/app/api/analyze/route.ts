@@ -101,10 +101,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Multi-chain discovery when chain=all
+    // Multi-chain discovery when chain=all — cap at top 3 chains by tx count to fit in 60s
+    const MAX_CHAINS_TO_SCAN = 3;
     let chainResults: { chainId: ChainId; txCount: number }[] = [];
+    let allDiscoveredChains: { chainId: ChainId; txCount: number }[] = [];
     if (selectedChain === "all") {
-      chainResults = await detectAllChainsWithActivity(resolved.address);
+      allDiscoveredChains = await detectAllChainsWithActivity(resolved.address);
+      // Sort by tx count descending, take top N for full scan
+      chainResults = [...allDiscoveredChains]
+        .sort((a, b) => b.txCount - a.txCount)
+        .slice(0, MAX_CHAINS_TO_SCAN);
     }
 
     // 2.5. Check cache
@@ -237,7 +243,8 @@ export async function POST(request: NextRequest) {
       attestationTxHash,
       behavioralProfile,
       ensName: agentData.addressInfo?.ensName || null,
-      chainResults: chainResults.length > 0 ? chainResults : undefined,
+      chainResults: allDiscoveredChains.length > 0 ? allDiscoveredChains : undefined,
+      chainsScanned: chainResults.length > 0 ? chainResults.map(c => c.chainId) : undefined,
     };
 
     analysisCache.set(cacheKey, response);
