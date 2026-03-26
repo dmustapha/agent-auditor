@@ -24,7 +24,7 @@ import { computeMetrics } from "./metrics";
 const RATE_LIMIT_DELAY_MS = 220; // ~4.5 RPS per chain (under 5 RPS limit)
 const lastRequestTime = new Map<ChainId, number>();
 
-const PER_FETCH_TIMEOUT_MS = 8_000;
+const PER_FETCH_TIMEOUT_MS = 15_000;
 
 function fetchWithTimeout(url: string, timeoutMs = PER_FETCH_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
@@ -71,7 +71,7 @@ export async function getTransactions(
   const all: TransactionSummary[] = [];
 
   let url = baseUrl;
-  for (let page = 0; page < 3; page++) {
+  for (let page = 0; page < 2; page++) {
     const res = await rateLimitedFetch(chainId, url);
     const data: BlockscoutPaginatedResponse<BlockscoutTransaction> = await res.json();
 
@@ -244,16 +244,34 @@ export async function fetchAgentData(
   chainId: ChainId,
   address: string,
 ): Promise<AgentTransactionData> {
-  const [transactions, tokenTransfers, contractCalls, smartContractData, coinBalanceHistory, eventLogs, addressInfo] =
-    await Promise.all([
-      getTransactions(chainId, address),
-      getTokenTransfers(chainId, address),
-      getInternalTransactions(chainId, address),
-      getSmartContractData(chainId, address),
-      getCoinBalanceHistory(chainId, address),
-      getEventLogs(chainId, address),
-      getAddressInfo(chainId, address),
-    ]);
+  // Core data (must succeed): transactions + address info
+  // Optional data (best-effort): token transfers, internal txs, smart contract, balance history, event logs
+  const [txResult, addrResult] = await Promise.allSettled([
+    getTransactions(chainId, address),
+    getAddressInfo(chainId, address),
+  ]);
+
+  const transactions = txResult.status === "fulfilled" ? txResult.value : [];
+  const addressInfo = addrResult.status === "fulfilled" ? addrResult.value : null;
+
+  if (transactions.length === 0 && txResult.status === "rejected") {
+    throw new Error(`Failed to fetch transactions for ${address} on ${chainId}`);
+  }
+
+  // Best-effort optional data — any failure returns empty/null
+  const [tfResult, ccResult, scResult, cbResult, elResult] = await Promise.allSettled([
+    getTokenTransfers(chainId, address),
+    getInternalTransactions(chainId, address),
+    getSmartContractData(chainId, address),
+    getCoinBalanceHistory(chainId, address),
+    getEventLogs(chainId, address),
+  ]);
+
+  const tokenTransfers = tfResult.status === "fulfilled" ? tfResult.value : [];
+  const contractCalls = ccResult.status === "fulfilled" ? ccResult.value : [];
+  const smartContractData = scResult.status === "fulfilled" ? scResult.value : null;
+  const coinBalanceHistory = cbResult.status === "fulfilled" ? cbResult.value : [];
+  const eventLogs = elResult.status === "fulfilled" ? elResult.value : [];
 
   const resolvedAddressInfo = addressInfo ?? undefined;
   const computedMetrics = computeMetrics({ address, chainId, transactions, tokenTransfers, contractCalls, coinBalanceHistory, addressInfo: resolvedAddressInfo });
