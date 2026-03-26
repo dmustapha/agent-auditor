@@ -101,16 +101,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Multi-chain discovery when chain=all — deep-scan top 1 chain, show all discovered
-    const MAX_CHAINS_TO_SCAN = 1;
+    // Multi-chain discovery when chain=all
     let chainResults: { chainId: ChainId; txCount: number }[] = [];
-    let allDiscoveredChains: { chainId: ChainId; txCount: number }[] = [];
     if (selectedChain === "all") {
-      allDiscoveredChains = await detectAllChainsWithActivity(resolved.address);
-      // Sort by tx count descending, take top N for full scan
-      chainResults = [...allDiscoveredChains]
-        .sort((a, b) => b.txCount - a.txCount)
-        .slice(0, MAX_CHAINS_TO_SCAN);
+      chainResults = await detectAllChainsWithActivity(resolved.address);
     }
 
     // 2.5. Check cache
@@ -216,20 +210,8 @@ export async function POST(request: NextRequest) {
 
       const client = createVeniceClient(apiKey);
       const model = await resolveModel(client);
-      try {
-        const rawScore = await analyzeAgent(client, enrichedData, model);
-        trustScore = validateTrustScore(rawScore);
-      } catch (veniceErr) {
-        console.error("[/api/analyze] Venice AI failed:", veniceErr);
-        const msg = veniceErr instanceof Error ? veniceErr.message : "AI analysis failed";
-        return NextResponse.json(
-          {
-            error: "analysis_failed",
-            message: `AI analysis failed: ${msg.includes("aborted") ? "Request timed out. Try a specific chain instead of All Chains." : msg}`,
-          } satisfies AnalyzeErrorResponse,
-          { status: 502 },
-        );
-      }
+      const rawScore = await analyzeAgent(client, enrichedData, model);
+      trustScore = validateTrustScore(rawScore);
     }
 
     // 6. Attempt on-chain attestation (non-blocking)
@@ -255,18 +237,18 @@ export async function POST(request: NextRequest) {
       attestationTxHash,
       behavioralProfile,
       ensName: agentData.addressInfo?.ensName || null,
-      chainResults: allDiscoveredChains.length > 0 ? allDiscoveredChains : undefined,
-      chainsScanned: chainResults.length > 0 ? chainResults.map(c => c.chainId) : undefined,
+      chainResults: chainResults.length > 0 ? chainResults : undefined,
     };
 
     analysisCache.set(cacheKey, response);
     return NextResponse.json(response);
   } catch (err) {
     console.error("[/api/analyze] Error:", err);
+    const isDev = process.env.NODE_ENV === "development";
     return NextResponse.json(
       {
         error: "internal_error",
-        message: err instanceof Error ? err.message : "An unexpected error occurred",
+        message: isDev && err instanceof Error ? err.message : "An unexpected error occurred",
       } satisfies AnalyzeErrorResponse,
       { status: 500 },
     );

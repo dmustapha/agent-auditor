@@ -432,7 +432,6 @@ export interface AnalyzeResponse {
   readonly ethPrice?: number;
   readonly attestationTxHash?: string;
   readonly chainResults?: readonly { chainId: string; txCount: number }[];
-  readonly chainsScanned?: readonly string[];
   readonly behavioralProfile?: BehavioralProfile;
   readonly ensName?: string | null;
 }
