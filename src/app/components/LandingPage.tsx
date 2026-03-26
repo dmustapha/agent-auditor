@@ -31,17 +31,6 @@ const staggerItem = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: EASE_SNAP } },
 };
 
-const pillContainer = {
-  hidden: {},
-  visible: {
-    transition: { staggerChildren: 0.08 },
-  },
-};
-
-const pillItem = {
-  hidden: { opacity: 0, x: -12 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.3, ease: EASE_SNAP } },
-};
 
 function TypewriterKicker() {
   const [displayCount, setDisplayCount] = useState(0);
@@ -188,18 +177,6 @@ export function LandingPage({ onLaunch, agentCount }: LandingPageProps) {
             </button>
           </motion.div>
 
-          <motion.div
-            className="aa-hero-examples"
-            aria-label="Example agents"
-            variants={pillContainer}
-            initial="hidden"
-            animate="visible"
-            transition={{ delayChildren: kickerDoneDelay + 0.9 }}
-          >
-            <motion.span className="aa-hero-pill" variants={pillItem}>Olas Keeper (Gnosis)</motion.span>
-            <motion.span className="aa-hero-pill" variants={pillItem}>MEV Bot (Ethereum)</motion.span>
-            <motion.span className="aa-hero-pill" variants={pillItem}>Aave Liquidator (Base)</motion.span>
-          </motion.div>
         </div>
       </section>
 

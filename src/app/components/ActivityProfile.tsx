@@ -1,6 +1,7 @@
 "use client";
 
 import type { ActivityProfile as ActivityProfileType } from "../../lib/types";
+import { cleanProtocols } from "@/lib/sanitize";
 
 interface ActivityProfileProps {
   readonly profile?: ActivityProfileType;
@@ -41,7 +42,7 @@ export function ActivityProfile({ profile, narrativeFallback }: ActivityProfileP
       {/* Protocol Breakdown */}
       {profile.protocolBreakdown.length > 0 && (
         <div className="aa-protocol-bar">
-          {profile.protocolBreakdown.map((entry) => (
+          {profile.protocolBreakdown.filter((entry) => cleanProtocols([entry.protocol]).length > 0).map((entry) => (
             <div key={entry.protocol} className="aa-protocol-entry">
               <span className="aa-protocol-name">{entry.protocol}</span>
               <div className="aa-protocol-pct-bar">

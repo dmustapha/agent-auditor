@@ -27,6 +27,7 @@ import {
   BreakdownBar,
   FlagCard,
 } from "./trustscore";
+import { cleanProtocols, isSpamToken } from "@/lib/sanitize";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -318,9 +319,9 @@ function HeroIdentity({
           </span>
         </div>
 
-        {score.protocolsUsed.length > 0 && (
+        {cleanProtocols(score.protocolsUsed).length > 0 && (
           <div className="aa-protocol-tags">
-            {score.protocolsUsed.slice(0, 5).map((protocol) => (
+            {cleanProtocols(score.protocolsUsed).slice(0, 5).map((protocol) => (
               <span key={protocol} className="aa-protocol-tag">{protocol}</span>
             ))}
           </div>
@@ -749,11 +750,11 @@ function NetworkSection({ score }: { score: UITrustScore }) {
         </div>
       )}
 
-      {score.protocolsUsed.length > 0 && (
+      {cleanProtocols(score.protocolsUsed).length > 0 && (
         <div className="aa-protocol-fingerprint">
           <p className="aa-frequented-heading">Protocol Fingerprint</p>
           <div className="aa-protocols-scroll" role="list" aria-label="Protocols list">
-            {score.protocolsUsed.map((protocol, i) => (
+            {cleanProtocols(score.protocolsUsed).map((protocol, i) => (
               <span key={protocol} className="aa-protocol-chip" role="listitem" style={{ animationDelay: `${i * 40}ms` }}>
                 {protocol}
               </span>
@@ -803,8 +804,8 @@ function BehavioralInsights({
               <div className="aa-bar-track">
                 <div className="aa-bar-fill" style={{ width: `${cat.percentage}%` }} />
               </div>
-              {cat.protocols.length > 0 && (
-                <span className="aa-activity-protocols">{cat.protocols.join(", ")}</span>
+              {cleanProtocols(cat.protocols).length > 0 && (
+                <span className="aa-activity-protocols">{cleanProtocols(cat.protocols).join(", ")}</span>
               )}
             </div>
           ))}
@@ -834,13 +835,13 @@ function BehavioralInsights({
           <div className="aa-insights-cell">
             <p className="aa-section-heading">Token Flow</p>
             <div className="aa-insights-detail">
-              {profile.tokenFlowSummary.dominantToken && (
+              {profile.tokenFlowSummary.dominantToken && !isSpamToken(profile.tokenFlowSummary.dominantToken.symbol) && (
                 <span>Dominant: <strong>{profile.tokenFlowSummary.dominantToken.symbol}</strong> ({profile.tokenFlowSummary.dominantToken.txCount} txs)</span>
               )}
               <span>Unique tokens: {profile.tokenFlowSummary.uniqueTokens}</span>
               <span>Net direction: {profile.tokenFlowSummary.netDirection}</span>
-              {profile.tokenFlowSummary.topTokens.length > 1 && (
-                <span>Top: {profile.tokenFlowSummary.topTokens.slice(0, 3).map(t => t.symbol).join(", ")}</span>
+              {profile.tokenFlowSummary.topTokens.filter(t => !isSpamToken(t.symbol)).length > 1 && (
+                <span>Top: {profile.tokenFlowSummary.topTokens.filter(t => !isSpamToken(t.symbol)).slice(0, 3).map(t => t.symbol).join(", ")}</span>
               )}
             </div>
           </div>

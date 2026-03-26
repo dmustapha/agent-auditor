@@ -38,11 +38,6 @@ function deriveBadge(
 
 const VALID_CHAINS = new Set(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "all"]);
 
-const EXAMPLE_AGENTS = [
-  { label: "Olas Keeper (Gnosis)", address: "0x77af31De935740567Cf4fF1986D04B2c964A786a", chain: "gnosis" as ChainId },
-  { label: "MEV Bot (Ethereum)", address: "0x6b75d8AF000000e20B7a7DDf000Ba900b4009A80", chain: "ethereum" as ChainId },
-  { label: "Aave Liquidator (Base)", address: "0x80D4e3d92B4AA394b1B58cB568a6e2DE0FE2698E", chain: "base" as ChainId },
-];
 
 const LOADING_STEPS = [
   "Initializing trust engine...",
@@ -470,24 +465,6 @@ function Dashboard() {
               <span className="aa-kbd-hint-compact">
                 <kbd className="aa-kbd">⌘K</kbd>
               </span>
-            )}
-            {showHero && (
-              <div className="aa-example-agents" aria-label="Example agents to try">
-                <span className="aa-example-label">Try an example:</span>
-                {EXAMPLE_AGENTS.map((ex) => (
-                  <button
-                    key={ex.address}
-                    className="aa-example-btn"
-                    onClick={() => {
-                      setInputValue(ex.address);
-                      setSelectedChain(ex.chain);
-                      runAudit(ex.address, ex.chain);
-                    }}
-                  >
-                    {ex.label}
-                  </button>
-                ))}
-              </div>
             )}
           </div>
         </section>

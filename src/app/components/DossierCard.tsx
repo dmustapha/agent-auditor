@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import type { DirectoryAgent, ChainId } from "@/lib/types";
+import { cleanProtocols } from "@/lib/sanitize";
 
 interface DossierCardProps {
   readonly agent: DirectoryAgent;
@@ -222,9 +223,9 @@ export function DossierCard({ agent, index, onSelect }: DossierCardProps) {
             </div>
           </div>
 
-          {agent.protocolsUsed.length > 0 && (
+          {cleanProtocols(agent.protocolsUsed).length > 0 && (
             <div className="aa-dossier-protocols">
-              {agent.protocolsUsed.map((p) => (
+              {cleanProtocols(agent.protocolsUsed).map((p) => (
                 <span key={p} className="aa-dossier-chip">{p}</span>
               ))}
             </div>
