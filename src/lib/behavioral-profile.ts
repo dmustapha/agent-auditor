@@ -2,10 +2,11 @@ import type {
   TransactionSummary, TokenTransfer, ContractCall, CoinBalancePoint,
   BehavioralProfile, LifeEvent, ActivityCategory, ResolvedCounterparty,
   FailedTxAnalysis, TimezoneFingerprint, TokenFlowSummary, BalanceStory,
-  ChainId,
+  ChainId, SampleContext,
 } from "./types";
 import { METHOD_REGISTRY } from "./agent-classifier";
 import { resolveProtocolName } from "./protocol-registry";
+import { computeSampleContext } from "./metrics";
 
 // ─── Activity Category Mapping ──────────────────────────────────────────────
 
@@ -53,6 +54,7 @@ export async function computeBehavioralProfile(
   tokenTransfers: readonly TokenTransfer[],
   _contractCalls: readonly ContractCall[],
   coinBalanceHistory: readonly CoinBalancePoint[],
+  totalTransactionCount?: number,
 ): Promise<BehavioralProfile> {
   const selfLower = address.toLowerCase();
   const validTxs = transactions.filter(tx => tx.timestamp > 0);
@@ -74,6 +76,10 @@ export async function computeBehavioralProfile(
     protocolLoyalty: computeProtocolLoyalty(validTxs),
     busiestDay: computeBusiestDay(sortedTxs),
     longestDormancy: computeLongestDormancy(sortedTxs),
+    sampleContext: computeSampleContext(validTxs.length, totalTransactionCount ?? validTxs.length),
+    sampleWindowDays: sortedTxs.length >= 2
+      ? Math.round((sortedTxs[sortedTxs.length - 1].timestamp - sortedTxs[0].timestamp) / 86_400_000)
+      : 0,
   };
 }
 

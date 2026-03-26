@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
     const ethPricePromise = getETHPrice();
 
     let agentData;
+    let totalTxCountForProfile: number | undefined;
     if (selectedChain === "all" && chainResults.length > 1) {
       // Fetch from all active chains in parallel (allSettled so one flaky chain doesn't kill the request)
       const allChainSettled = await Promise.allSettled(
@@ -152,9 +153,14 @@ export async function POST(request: NextRequest) {
         coinBalanceHistory: mergedCoinBalance,
         computedMetrics: primary.computedMetrics, // from primary chain only — behavioral profile below uses merged txs
       };
+      totalTxCountForProfile = allChainData.reduce(
+        (sum, d) => sum + (d.addressInfo?.transactionsCount ?? d.transactions.length),
+        0,
+      );
     } else {
       const fetchChain = chainResults.length === 1 ? chainResults[0].chainId as ChainId : resolved.chainId;
       agentData = await fetchAgentData(fetchChain, resolved.address);
+      totalTxCountForProfile = agentData.addressInfo?.transactionsCount;
     }
     const ethPrice = await ethPricePromise;
 
@@ -163,6 +169,7 @@ export async function POST(request: NextRequest) {
       agentData.address, agentData.chainId,
       agentData.transactions, agentData.tokenTransfers,
       agentData.contractCalls, agentData.coinBalanceHistory ?? [],
+      totalTxCountForProfile,
     );
     const enrichedData = { ...agentData, behavioralProfile };
 
@@ -243,6 +250,7 @@ export async function POST(request: NextRequest) {
       behavioralProfile,
       ensName: agentData.addressInfo?.ensName || null,
       chainResults: chainResults.length > 0 ? chainResults : undefined,
+      sampleContext: behavioralProfile.sampleContext,
     };
 
     analysisCache.set(cacheKey, response);

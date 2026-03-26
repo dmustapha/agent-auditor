@@ -24,6 +24,8 @@ import type {
   UITrustScore,
   TransactionSummary,
   WalletClassification,
+  SampleContext,
+  EntityType,
 } from "@/lib/types";
 
 function deriveBadge(
@@ -153,6 +155,8 @@ function Dashboard() {
     trustScore: UITrustScore;
     transactions: TransactionSummary[];
     fetchedTransactionCount?: number;
+    sampleContext?: SampleContext;
+    entityType?: EntityType;
   } | null>(null);
   const [selectedChain, setSelectedChain] = useState<ChainId | "all">("all");
   const [inputValue, setInputValue] = useState("");
@@ -273,6 +277,8 @@ function Dashboard() {
         trustScore: uiScore,
         transactions: [...data.transactions],
         fetchedTransactionCount: data.fetchedTransactionCount,
+        sampleContext: data.sampleContext,
+        entityType: data.entityType,
       });
 
       addAudit({
@@ -531,6 +537,13 @@ function Dashboard() {
           {!loading && result && !shouldGate && (
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               <TrustScoreCard score={result.trustScore} badge={deriveBadge(walletClassification, hasAgentIdentity)} attestationTxHash={attestationTxHash} chainResults={chainResults} />
+              {result.entityType && result.entityType !== "AUTONOMOUS_AGENT" && (
+                <div className="text-sm text-yellow-600 dark:text-yellow-400 mt-1">
+                  {result.entityType === "PROTOCOL_CONTRACT" && "⚙️ This is a protocol contract, not an autonomous agent."}
+                  {result.entityType === "USER_WALLET" && "👤 This appears to be a human wallet, not an autonomous agent."}
+                  {result.entityType === "UNKNOWN" && "❓ Entity type could not be determined."}
+                </div>
+              )}
               <div className="aa-reveal aa-delay-5 visible">
                 <TransactionTable
                   transactions={result.transactions}
@@ -538,6 +551,11 @@ function Dashboard() {
                   totalCount={result.fetchedTransactionCount}
                   agentAddress={result.trustScore.address}
                 />
+                {result.sampleContext?.isSampleDerived && (
+                  <span className="text-xs text-muted-foreground ml-1">
+                    (sample of {result.sampleContext.totalTransactionCount.toLocaleString()} total — {result.sampleContext.sampleCoveragePercent}% coverage)
+                  </span>
+                )}
               </div>
             </div>
           )}
