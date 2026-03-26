@@ -235,7 +235,7 @@ export async function POST(request: NextRequest) {
       trustScore,
       agentIdentity,
       transactions: enrichedData.transactions.slice(0, 20),
-      totalTransactionCount: enrichedData.transactions.length,
+      fetchedTransactionCount: enrichedData.transactions.length,
       walletClassification: enrichedData.computedMetrics?.walletClassification,
       successRate: enrichedData.computedMetrics?.successRate,
       ethPrice: ethPrice ?? undefined,

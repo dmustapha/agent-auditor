@@ -152,7 +152,7 @@ function Dashboard() {
   const [result, setResult] = useState<{
     trustScore: UITrustScore;
     transactions: TransactionSummary[];
-    totalTransactionCount?: number;
+    fetchedTransactionCount?: number;
   } | null>(null);
   const [selectedChain, setSelectedChain] = useState<ChainId | "all">("all");
   const [inputValue, setInputValue] = useState("");
@@ -272,7 +272,7 @@ function Dashboard() {
       setResult({
         trustScore: uiScore,
         transactions: [...data.transactions],
-        totalTransactionCount: data.totalTransactionCount,
+        fetchedTransactionCount: data.fetchedTransactionCount,
       });
 
       addAudit({
@@ -535,7 +535,7 @@ function Dashboard() {
                 <TransactionTable
                   transactions={result.transactions}
                   chainId={result.trustScore.chainId}
-                  totalCount={result.totalTransactionCount}
+                  totalCount={result.fetchedTransactionCount}
                   agentAddress={result.trustScore.address}
                 />
               </div>

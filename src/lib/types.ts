@@ -40,6 +40,27 @@ export type AgentType =
   | "BRIDGE_RELAYER" | "DEX_TRADER" | "GOVERNANCE"
   | "YIELD_OPTIMIZER" | "UNKNOWN";
 
+// ─── Entity Classification ──────────────────────────────────────────────────
+
+export type EntityType = "AUTONOMOUS_AGENT" | "PROTOCOL_CONTRACT" | "USER_WALLET" | "UNKNOWN";
+
+export interface EntityClassification {
+  readonly entityType: EntityType;
+  readonly confidence: "LOW" | "MEDIUM" | "HIGH" | "DEFINITIVE";
+  readonly signals: readonly string[];
+  readonly fromRatio: number;        // 0.0-1.0: fraction of txs where address is tx.from
+  readonly primarySignal: string;    // the signal that determined classification
+}
+
+// ─── Sample Context ─────────────────────────────────────────────────────────
+
+export interface SampleContext {
+  readonly totalTransactionCount: number;   // from addressInfo.transactionsCount (real Blockscout total)
+  readonly sampleSize: number;              // transactions.length (what we actually fetched)
+  readonly sampleCoveragePercent: number;   // (sampleSize / totalTransactionCount) * 100
+  readonly isSampleDerived: boolean;        // true when sampleSize < totalTransactionCount
+}
+
 // ─── Blockscout Response Types ───────────────────────────────────────────────
 
 export interface BlockscoutTransaction {
@@ -146,6 +167,8 @@ export interface AgentMetrics {
   readonly protocolsUsed: readonly string[];
   readonly walletClassification: WalletClassification;
   readonly consistencyScore: number;
+  readonly sampleContext?: SampleContext;
+  readonly earliestSampleTimestamp?: number | null;
 }
 
 // ─── Behavioral Profile Types ───────────────────────────────────────────────
@@ -216,6 +239,8 @@ export interface BehavioralProfile {
   readonly protocolLoyalty: string; // e.g. "94% of swaps through Uniswap V3"
   readonly busiestDay: { readonly date: string; readonly txCount: number } | null;
   readonly longestDormancy: { readonly days: number; readonly from: string; readonly to: string } | null;
+  readonly sampleContext?: SampleContext;
+  readonly sampleWindowDays?: number;
 }
 
 // ─── Blockscout Enrichment Types ────────────────────────────────────────────
@@ -254,6 +279,8 @@ export interface AgentTransactionData {
   readonly coinBalanceHistory?: CoinBalancePoint[];
   readonly eventLogs?: EventLog[];
   readonly addressInfo?: AddressInfo;
+  readonly entityClassification?: EntityClassification;
+  readonly sampleContext?: SampleContext;
   readonly behavioralProfile?: BehavioralProfile;
 }
 
@@ -343,6 +370,8 @@ export interface TrustScore {
   readonly uniqueCounterparties?: number;
   readonly txFrequencyPerDay?: number;
   readonly balanceTrend?: "accumulating" | "depleting" | "stable";
+  readonly entityType?: EntityType;
+  readonly entityClassification?: EntityClassification;
 }
 
 export interface TrustFlag {
@@ -426,7 +455,7 @@ export interface AnalyzeResponse {
   readonly trustScore: TrustScore;
   readonly agentIdentity: AgentIdentity | null;
   readonly transactions: readonly TransactionSummary[];
-  readonly totalTransactionCount?: number;
+  readonly fetchedTransactionCount?: number;  // was totalTransactionCount — sample size
   readonly walletClassification?: WalletClassification;
   readonly successRate?: number;
   readonly ethPrice?: number;
@@ -434,6 +463,9 @@ export interface AnalyzeResponse {
   readonly chainResults?: readonly { chainId: string; txCount: number }[];
   readonly behavioralProfile?: BehavioralProfile;
   readonly ensName?: string | null;
+  readonly entityType?: EntityType;
+  readonly entityClassification?: EntityClassification;
+  readonly sampleContext?: SampleContext;
 }
 
 export interface AnalyzeErrorResponse {
@@ -495,6 +527,9 @@ export interface UITrustScore {
   readonly txFrequencyPerDay?: number;
   readonly balanceTrend?: "accumulating" | "depleting" | "stable";
   readonly behavioralProfile?: BehavioralProfile;
+  readonly entityType?: EntityType;
+  readonly entityClassification?: EntityClassification;
+  readonly sampleContext?: SampleContext;
 }
 
 // ─── Sidebar / localStorage Types ───────────────────────────────────────────
@@ -506,6 +541,7 @@ export interface AuditRecord {
   readonly recommendation: "SAFE" | "CAUTION" | "BLOCKLIST";
   readonly timestamp: number;
   readonly agentType: AgentType;
+  readonly entityType?: EntityType;
 }
 
 export interface WatchlistEntry extends AuditRecord {
