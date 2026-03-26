@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag, ActivityProfile, BehavioralProfile } from "./types";
+import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag, ActivityProfile, BehavioralProfile, SampleContext, EntityClassification, EntityType } from "./types";
 import { sanitizeForPrompt } from "./sanitize";
 import { METHOD_REGISTRY } from "./agent-classifier";
 import { computeBreakdown } from "./breakdown";
@@ -1211,6 +1211,44 @@ ENS: ${sanitizedData.addressInfo.ensName ?? "none"}
 Implementation: ${sanitizedData.addressInfo.implementationAddress ?? "N/A"}
 ` : "";
 
+  // ─── DATA WINDOW section (only when sample-derived) ───
+  const sampleCtx = sanitizedData.computedMetrics?.sampleContext;
+  const dataWindowSection = sampleCtx?.isSampleDerived ? (() => {
+    const coverage = sampleCtx.sampleCoveragePercent;
+    let warning = "";
+    if (coverage < 10) {
+      warning = "\n⚠ CRITICAL: Sample is <10% of total history. DO NOT infer wallet age, daily frequency, or busiest day from this sample. Use total count for scale. Sample shows recent patterns only.";
+    } else if (coverage < 50) {
+      warning = "\n⚠ Sample covers <50% of history. Exercise caution with age-based and frequency metrics.";
+    }
+    return `
+=== DATA WINDOW (READ THIS FIRST) ===
+Total transactions on-chain (Blockscout): ${sampleCtx.totalTransactionCount}
+Sample fetched: ${sampleCtx.sampleSize} (most recent)
+Sample coverage: ${coverage}%${warning}
+`;
+  })() : "";
+
+  // ─── ENTITY CLASSIFICATION section ───
+  const entityClass = sanitizedData.entityClassification;
+  const entitySection = entityClass ? (() => {
+    const framingByType: Record<string, string> = {
+      AUTONOMOUS_AGENT: "Produce a standard agent trust score audit.",
+      PROTOCOL_CONTRACT: "Frame as protocol health check. Note this is infrastructure, not an agent. User may have mistakenly submitted this.",
+      USER_WALLET: "Frame as wallet security review. Note this appears to be a personal wallet. User may have mistakenly submitted this.",
+      UNKNOWN: "Entity type could not be determined. Analyze based on data patterns. Do not assume this is an agent.",
+    };
+    return `
+=== ENTITY CLASSIFICATION ===
+Entity type: ${entityClass.entityType}
+Classification confidence: ${entityClass.confidence}
+From ratio: ${Math.round(entityClass.fromRatio * 100)}%
+Primary signal: ${entityClass.primarySignal}
+All signals: ${entityClass.signals.join(", ")}
+${framingByType[entityClass.entityType] ?? ""}
+`;
+  })() : "";
+
   // Compute method frequency for Venice
   const methodCounts = new Map<string, number>();
   for (const tx of sanitizedData.transactions) {
@@ -1265,7 +1303,9 @@ Current: ${profile.balanceStory.currentBalanceETH} ETH | Drawdown: ${profile.bal
 Trend: ${profile.balanceStory.trend}
 
 === AGENT BIOGRAPHY ===
-Wallet age: ${profile.walletAgeDays} days | Contracts deployed: ${profile.contractsDeployed}
+${sampleCtx?.isSampleDerived && sampleCtx.sampleCoveragePercent < 50
+  ? `Sample window: ${profile.sampleWindowDays ?? profile.walletAgeDays} days (NOT wallet age — only covers ${sampleCtx.sampleCoveragePercent}% of transactions)`
+  : `Wallet age: ${profile.walletAgeDays} days`} | Contracts deployed: ${profile.contractsDeployed}
 First action: ${profile.firstAction}
 Protocol loyalty: ${profile.protocolLoyalty}
 ${profile.busiestDay ? `Busiest day: ${profile.busiestDay.date} (${profile.busiestDay.txCount} txs)` : ""}
@@ -1276,10 +1316,10 @@ ${profile.longestDormancy ? `Longest dormancy: ${profile.longestDormancy.days} d
 
 Address: ${sanitizedData.address}
 Chain: ${sanitizedData.chainId}
-Transaction count: ${sanitizedData.transactions.length}
+Transaction count (sample): ${sanitizedData.transactions.length}${sampleCtx?.isSampleDerived ? ` of ${sampleCtx.totalTransactionCount} total` : ""}
 Token transfer count: ${sanitizedData.tokenTransfers.length}
 Unique contracts called: ${new Set(sanitizedData.contractCalls.map((c) => c.contract)).size}
-${metricsSection}${walletSection}${groundTruthSection}${methodFreqSection}${addressInfoSection}${contractSection}${balanceSection}${eventsSection}${profileSections}
+${dataWindowSection}${entitySection}${metricsSection}${walletSection}${groundTruthSection}${methodFreqSection}${addressInfoSection}${contractSection}${balanceSection}${eventsSection}${profileSections}
 Every field in your JSON must reference specific numbers from the data above.
 Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
 
