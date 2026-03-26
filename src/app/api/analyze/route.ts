@@ -13,6 +13,8 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 const USE_MOCK = process.env.VENICE_MOCK === "true";
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     // Rate limit
