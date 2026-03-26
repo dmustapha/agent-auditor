@@ -6,7 +6,6 @@ import type {
 } from "./types";
 import { METHOD_REGISTRY } from "./agent-classifier";
 import { resolveProtocolName } from "./protocol-registry";
-import { getContractName } from "./blockscout";
 
 // ─── Activity Category Mapping ──────────────────────────────────────────────
 
@@ -280,7 +279,7 @@ function computeActivityBreakdown(txs: readonly TransactionSummary[]): ActivityC
 async function resolveTopCounterparties(
   txs: readonly TransactionSummary[],
   selfLower: string,
-  chainId: ChainId,
+  _chainId: ChainId,
 ): Promise<ResolvedCounterparty[]> {
   const counterpartyData = new Map<string, { count: number; inbound: bigint; outbound: bigint }>();
 
@@ -307,31 +306,24 @@ async function resolveTopCounterparties(
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 5);
 
-  // Resolve names in parallel: static registry first, then Blockscout for unknowns
-  const results = await Promise.all(
-    top5.map(async ([addr, data]) => {
-      let name = resolveProtocolName(addr);
-      if (!name) {
-        try { name = await getContractName(chainId, addr); } catch { /* non-fatal */ }
-      }
+  // Resolve names via static registry only (no Blockscout API calls — saves 3-8s per request)
+  return top5.map(([addr, data]) => {
+    const name = resolveProtocolName(addr);
 
-      const totalVolume = data.inbound + data.outbound;
-      const direction: ResolvedCounterparty["direction"] =
-        data.outbound > data.inbound * 2n ? "mostly_outbound"
-        : data.inbound > data.outbound * 2n ? "mostly_inbound"
-        : "balanced";
+    const totalVolume = data.inbound + data.outbound;
+    const direction: ResolvedCounterparty["direction"] =
+      data.outbound > data.inbound * 2n ? "mostly_outbound"
+      : data.inbound > data.outbound * 2n ? "mostly_inbound"
+      : "balanced";
 
-      return {
-        address: addr,
-        name,
-        txCount: data.count,
-        volumeETH: formatWeiToETH(totalVolume.toString()),
-        direction,
-      };
-    })
-  );
-
-  return results;
+    return {
+      address: addr,
+      name,
+      txCount: data.count,
+      volumeETH: formatWeiToETH(totalVolume.toString()),
+      direction,
+    };
+  });
 }
 
 // ─── Failed Transaction Analysis ────────────────────────────────────────────

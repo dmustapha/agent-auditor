@@ -1193,8 +1193,14 @@ Latest: ${lastETH} ETH (${new Date(last.timestamp).toISOString()})
   })() : "";
 
   const eventsSection = sanitizedData.eventLogs?.length ? `
-=== RECENT EVENTS (last 10) ===
-${JSON.stringify(sanitizedData.eventLogs.slice(-10), null, 2)}
+=== RECENT EVENTS (last 10, compact) ===
+${sanitizedData.eventLogs.slice(-10).map(e => {
+    const date = new Date(e.timestamp).toISOString().split("T")[0];
+    const contract = e.contractAddress.slice(0, 10) + "…" + e.contractAddress.slice(-4);
+    const sig = e.topics[0] ? e.topics[0].slice(0, 10) + "…" : "none";
+    const dataBytes = e.data && e.data !== "0x" ? Math.floor((e.data.length - 2) / 2) : 0;
+    return `${date} | ${contract} | sig:${sig} | ${dataBytes}B data`;
+  }).join("\n")}
 ` : "";
 
   const addressInfoSection = sanitizedData.addressInfo ? `
@@ -1214,7 +1220,7 @@ Implementation: ${sanitizedData.addressInfo.implementationAddress ?? "N/A"}
       methodCounts.set(sel, (methodCounts.get(sel) ?? 0) + 1);
     }
   }
-  const sortedMethods = [...methodCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const sortedMethods = [...methodCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   const totalMethodCalls = [...methodCounts.values()].reduce((s, v) => s + v, 0);
   const methodFreqSection = sortedMethods.length > 0 ? `
 === METHOD FREQUENCY (top methods by count) ===

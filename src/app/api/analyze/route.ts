@@ -178,7 +178,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 4.1. Discover agent ID via reverse lookup if not resolved (3s timeout — non-blocking)
-    if (effectiveAgentId === null) {
+    // Skip when resolveInput already tried findAgentByAddress for this chain+address
+    if (effectiveAgentId === null && resolved.resolvedVia !== "address") {
       try {
         const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
         const discoveredId = await Promise.race([findAgentByAddress(resolved.chainId, resolved.address), timeout]);
