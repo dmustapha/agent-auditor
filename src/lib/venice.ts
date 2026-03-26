@@ -73,23 +73,11 @@ export async function listAvailableModels(client: OpenAI): Promise<string[]> {
  * Find the best available model matching our preferences.
  * Falls back through: PRIMARY_MODEL → FALLBACK_MODEL → first llama → first mistral → any model.
  */
-export async function resolveModel(client: OpenAI): Promise<string> {
-  if (_resolvedModel) return _resolvedModel;
-
-  const available = await listAvailableModels(client);
-
-  if (available.includes(PRIMARY_MODEL)) { _resolvedModel = PRIMARY_MODEL; return _resolvedModel; }
-  if (available.includes(FALLBACK_MODEL)) { _resolvedModel = FALLBACK_MODEL; return _resolvedModel; }
-
-  const llama = available.find((m) => m.includes("llama"));
-  if (llama) { _resolvedModel = llama; return _resolvedModel; }
-
-  const mistral = available.find((m) => m.includes("mistral"));
-  if (mistral) { _resolvedModel = mistral; return _resolvedModel; }
-
-  if (available.length > 0) { _resolvedModel = available[0]; return _resolvedModel; }
-
-  throw new Error("No models available on Venice");
+export async function resolveModel(_client?: OpenAI): Promise<string> {
+  // Use PRIMARY_MODEL directly — saves 2-3s by skipping models.list() API call.
+  // Venice has had llama-3.3-70b since launch; if removed, chat.completions.create
+  // will fail with a clear error anyway.
+  return PRIMARY_MODEL;
 }
 
 // ─── System Prompt ───────────────────────────────────────────────────────────

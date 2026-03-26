@@ -63,7 +63,7 @@ export async function getTransactions(
   const all: TransactionSummary[] = [];
 
   let url = baseUrl;
-  for (let page = 0; page < 3; page++) {
+  for (let page = 0; page < 2; page++) {
     const res = await rateLimitedFetch(chainId, url);
     const data: BlockscoutPaginatedResponse<BlockscoutTransaction> = await res.json();
 

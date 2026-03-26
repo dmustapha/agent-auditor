@@ -101,10 +101,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Multi-chain discovery when chain=all
+    // Multi-chain discovery when chain=all (cap at top 2 by tx count to stay within 60s)
     let chainResults: { chainId: ChainId; txCount: number }[] = [];
     if (selectedChain === "all") {
-      chainResults = await detectAllChainsWithActivity(resolved.address);
+      const allChains = await detectAllChainsWithActivity(resolved.address);
+      chainResults = allChains.slice(0, 2);
     }
 
     // 2.5. Check cache
