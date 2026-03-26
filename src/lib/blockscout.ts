@@ -19,6 +19,24 @@ import type {
 import { getChainConfig } from "./chains";
 import { computeMetrics } from "./metrics";
 
+// ─── Per-Call Timeout ────────────────────────────────────────────────────────
+// Mega-contracts (e.g. 1inch router, 9.7M txs) can cause Blockscout endpoints
+// to hang for 120s+. Cap each call so one slow endpoint can't kill the request.
+
+const PER_CALL_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, fallback: T, label?: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) =>
+      setTimeout(() => {
+        if (label) console.warn(`[blockscout] ${label} timed out after ${PER_CALL_TIMEOUT_MS}ms — using fallback`);
+        resolve(fallback);
+      }, PER_CALL_TIMEOUT_MS),
+    ),
+  ]);
+}
+
 // ─── Rate Limiting ───────────────────────────────────────────────────────────
 
 const RATE_LIMIT_DELAY_MS = 220; // ~4.5 RPS per chain (under 5 RPS limit)
@@ -238,13 +256,13 @@ export async function fetchAgentData(
 ): Promise<AgentTransactionData> {
   const [transactions, tokenTransfers, contractCalls, smartContractData, coinBalanceHistory, eventLogs, addressInfo] =
     await Promise.all([
-      getTransactions(chainId, address),
-      getTokenTransfers(chainId, address),
-      getInternalTransactions(chainId, address),
-      getSmartContractData(chainId, address),
-      getCoinBalanceHistory(chainId, address),
-      getEventLogs(chainId, address),
-      getAddressInfo(chainId, address),
+      withTimeout(getTransactions(chainId, address), [], "getTransactions"),
+      withTimeout(getTokenTransfers(chainId, address), [], "getTokenTransfers"),
+      withTimeout(getInternalTransactions(chainId, address), [], "getInternalTransactions"),
+      withTimeout(getSmartContractData(chainId, address), null, "getSmartContractData"),
+      withTimeout(getCoinBalanceHistory(chainId, address), [], "getCoinBalanceHistory"),
+      withTimeout(getEventLogs(chainId, address), [], "getEventLogs"),
+      withTimeout(getAddressInfo(chainId, address), null, "getAddressInfo"),
     ]);
 
   const resolvedAddressInfo = addressInfo ?? undefined;
