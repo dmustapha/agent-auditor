@@ -1,5 +1,5 @@
 import { toHex } from "viem";
-import type { TrustScore, TrustFlag, UITrustScore, BehavioralProfile } from "./types";
+import type { TrustScore, TrustFlag, UITrustScore, BehavioralProfile, EntityType } from "./types";
 import { getChainConfig } from "./chains";
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -108,6 +108,14 @@ const TREND_ICON = { accumulating: "↗", depleting: "↘", stable: "→" } as c
 // ─── Format for Telegram ─────────────────────────────────────────────────────
 
 export function formatForTelegram(score: TrustScore, ensName?: string | null): string {
+  const titleByEntity: Record<EntityType, string> = {
+    AUTONOMOUS_AGENT: "Agent Trust Score",
+    PROTOCOL_CONTRACT: "Protocol Health Check",
+    USER_WALLET: "Wallet Analysis",
+    UNKNOWN: "Address Analysis",
+  };
+  const reportTitle = titleByEntity[score.entityType ?? "AUTONOMOUS_AGENT"] ?? "AgentAuditor Intelligence Report";
+
   const emoji = score.recommendation === "SAFE" ? "✅" :
     score.recommendation === "CAUTION" ? "⚠️" : "🚫";
 
@@ -202,10 +210,10 @@ export function formatForTelegram(score: TrustScore, ensName?: string | null): s
   // ── Assemble ──
   const typeBadge = score.agentType && score.agentType !== "UNKNOWN" ? `  ${score.agentType}` : "";
 
-  return `${emoji} *AgentAuditor Intelligence Report*
+  return `${emoji} *AgentAuditor ${reportTitle}*
 
 *${displayName}*${typeBadge} on *${chainConfig.name}*
-${identityParts.length > 0 ? identityParts.join(" | ") : ""}
+${identityParts.length > 0 ? identityParts.join(" | ") : ""}${score.entityType === "PROTOCOL_CONTRACT" ? "\n⚙️ _This is a protocol contract, not an autonomous agent._\n" : ""}${score.entityType === "USER_WALLET" ? "\n👤 _This appears to be a human wallet, not an autonomous agent._\n" : ""}
 
 *TRUST SCORE: ${score.overallScore}/100 | ${score.recommendation}*
 \`${bar}\`
@@ -275,5 +283,8 @@ export function formatForUI(score: TrustScore, opts?: {
     txFrequencyPerDay: score.txFrequencyPerDay,
     balanceTrend: score.balanceTrend,
     behavioralProfile,
+    entityType: score.entityType,
+    entityClassification: score.entityClassification,
+    sampleContext: opts?.behavioralProfile?.sampleContext,
   };
 }
