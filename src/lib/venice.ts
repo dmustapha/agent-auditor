@@ -378,17 +378,19 @@ const FRIENDLY_CATEGORY: Record<string, string> = {
 function isSpamToken(symbol: string): boolean {
   if (!symbol) return true;
   const s = symbol.toLowerCase();
-  // URL patterns (visit X, claim at X, .net, .com, .lat, etc.)
-  if (/https?:\/\/|\.com\b|\.net\b|\.io\b|\.lat\b|\.xyz\b|\.org\b/.test(s)) return true;
+  // URL patterns — full URLs, bare "https/http", or domain TLDs anywhere in name
+  if (/https?|\.com\b|\.net\b|\.io\b|\.lat\b|\.xyz\b|\.org\b|\.dev\b/.test(s)) return true;
   // Scam phrases
-  if (/claim|free|bonus|reward|winner|won \$|airdrop|visit \[/i.test(s)) return true;
+  if (/claim|free|bonus|reward|winner|won \$|airdrop|visit|voucher|promo/i.test(s)) return true;
   // Dollar amounts in name ("$50,000", "$5000")
   if (/\$\s*[\d,]+/.test(symbol)) return true;
   // Emoji-heavy names (scam tokens love emojis)
   const emojiCount = (symbol.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) ?? []).length;
-  if (emojiCount >= 2) return true;
-  // Very long names (legit tokens are short: ETH, USDC, WETH)
-  if (symbol.length > 30) return true;
+  if (emojiCount >= 1) return true;
+  // Multi-word names with spaces — legit tokens are concise (ETH, USDC, UNI)
+  if ((symbol.match(/\s/g) ?? []).length >= 2) return true;
+  // Very long names
+  if (symbol.length > 20) return true;
   // "null" placeholder
   if (s === "null" || s === "undefined") return true;
   return false;
