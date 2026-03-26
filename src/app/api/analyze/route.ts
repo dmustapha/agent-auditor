@@ -101,8 +101,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Multi-chain discovery when chain=all — cap at top 3 chains by tx count to fit in 60s
-    const MAX_CHAINS_TO_SCAN = 3;
+    // Multi-chain discovery when chain=all — deep-scan top 1 chain, show all discovered
+    const MAX_CHAINS_TO_SCAN = 1;
     let chainResults: { chainId: ChainId; txCount: number }[] = [];
     let allDiscoveredChains: { chainId: ChainId; txCount: number }[] = [];
     if (selectedChain === "all") {
@@ -216,18 +216,8 @@ export async function POST(request: NextRequest) {
 
       const client = createVeniceClient(apiKey);
       const model = await resolveModel(client);
-      try {
-        const rawScore = await analyzeAgent(client, enrichedData, model);
-        trustScore = validateTrustScore(rawScore);
-      } catch (veniceErr) {
-        // Venice timed out or failed — fall back to mock score with real behavioral data
-        console.warn("[/api/analyze] Venice failed, falling back to mock:", veniceErr);
-        trustScore = createMockTrustScore(
-          resolved.address,
-          resolved.chainId,
-          enrichedData.transactions.length,
-        );
-      }
+      const rawScore = await analyzeAgent(client, enrichedData, model);
+      trustScore = validateTrustScore(rawScore);
     }
 
     // 6. Attempt on-chain attestation (non-blocking)

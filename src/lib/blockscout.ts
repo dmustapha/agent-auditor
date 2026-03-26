@@ -24,7 +24,7 @@ import { computeMetrics } from "./metrics";
 const RATE_LIMIT_DELAY_MS = 220; // ~4.5 RPS per chain (under 5 RPS limit)
 const lastRequestTime = new Map<ChainId, number>();
 
-const PER_FETCH_TIMEOUT_MS = 15_000;
+const PER_FETCH_TIMEOUT_MS = 10_000;
 
 function fetchWithTimeout(url: string, timeoutMs = PER_FETCH_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
