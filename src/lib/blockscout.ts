@@ -24,6 +24,14 @@ import { computeMetrics } from "./metrics";
 const RATE_LIMIT_DELAY_MS = 220; // ~4.5 RPS per chain (under 5 RPS limit)
 const lastRequestTime = new Map<ChainId, number>();
 
+const PER_FETCH_TIMEOUT_MS = 8_000;
+
+function fetchWithTimeout(url: string, timeoutMs = PER_FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 async function rateLimitedFetch(chainId: ChainId, url: string): Promise<Response> {
   const now = Date.now();
   const lastTime = lastRequestTime.get(chainId) ?? 0;
@@ -35,12 +43,12 @@ async function rateLimitedFetch(chainId: ChainId, url: string): Promise<Response
 
   lastRequestTime.set(chainId, Date.now());
 
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   if (res.status === 429) {
     // Back off and retry once on rate limit
     await new Promise((r) => setTimeout(r, RATE_LIMIT_DELAY_MS * 3));
     lastRequestTime.set(chainId, Date.now());
-    const retry = await fetch(url);
+    const retry = await fetchWithTimeout(url);
     if (!retry.ok) {
       throw new Error(`Blockscout rate limited on ${chainId}. Try again shortly.`);
     }
