@@ -1,8 +1,8 @@
-import type { AgentMetrics, AgentTransactionData } from "./types";
+import type { AgentMetrics, AgentTransactionData, SampleContext } from "./types";
 import { classifyAgentType, detectERC4337, inferProtocols, computeWalletClassification, computeConsistencyScore } from "./agent-classifier";
 
 export function computeMetrics(data: Pick<AgentTransactionData, "address" | "chainId" | "transactions" | "tokenTransfers" | "contractCalls" | "coinBalanceHistory" | "addressInfo">): AgentMetrics {
-  const { address, transactions } = data;
+  const { address, transactions, addressInfo } = data;
 
   // Gas metrics (BigInt to avoid precision loss on high-volume agents)
   const totalGasWei = transactions.reduce((sum, tx) => {
@@ -25,6 +25,9 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
     ? (lastSeen - firstSeen) / (1000 * 60 * 60 * 24)
     : 1;
   const txFrequencyPerDay = transactions.length / Math.max(daySpan, 1);
+
+  const totalTxCount = addressInfo?.transactionsCount ?? transactions.length;
+  const sampleContext = computeSampleContext(transactions.length, totalTxCount);
 
   // Active hours histogram (24 buckets)
   const activeHoursUTC = new Array(24).fill(0) as number[];
@@ -120,5 +123,22 @@ export function computeMetrics(data: Pick<AgentTransactionData, "address" | "cha
     protocolsUsed: inferProtocols(transactions),
     walletClassification: computeWalletClassification(transactions, data.addressInfo),
     consistencyScore: computeConsistencyScore(transactions),
+    sampleContext,
+    earliestSampleTimestamp: firstSeen,
+  };
+}
+
+export function computeSampleContext(
+  sampleSize: number,
+  totalTransactionCount: number,
+): SampleContext {
+  const effectiveTotal = Math.max(totalTransactionCount, sampleSize);
+  return {
+    totalTransactionCount: effectiveTotal,
+    sampleSize,
+    sampleCoveragePercent: effectiveTotal > 0
+      ? Number(((sampleSize / effectiveTotal) * 100).toFixed(2))
+      : 100,
+    isSampleDerived: sampleSize < effectiveTotal,
   };
 }
