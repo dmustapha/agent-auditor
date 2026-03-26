@@ -37,8 +37,8 @@ const METHOD_NAMES: Record<string, string> = {
 const VENICE_BASE_URL = "https://api.venice.ai/api/v1";
 
 // [ASSUMED] Model IDs — verify at runtime via GET /api/v1/models
-const PRIMARY_MODEL = "llama-3.3-70b";
-const FALLBACK_MODEL = "mistral-31-24b";
+const PRIMARY_MODEL = "mistral-small-3-2-24b-instruct";
+const FALLBACK_MODEL = "llama-3.3-70b";
 
 // ─── Venice-Specific Parameters ──────────────────────────────────────────────
 
