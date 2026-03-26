@@ -4,7 +4,7 @@ import { detectInputType, resolveInput } from "@/lib/resolver";
 import { fetchAgentData, detectAllChainsWithActivity } from "@/lib/blockscout";
 import { getAgentIdentity, findAgentByAddress } from "@/lib/erc8004";
 import { publishAttestation } from "@/lib/attestation";
-import { createVeniceClient, analyzeAgent, resolveModel, createMockTrustScore } from "@/lib/venice";
+import { createVeniceClient, analyzeAgent, createMockTrustScore } from "@/lib/venice";
 import { computeBehavioralProfile } from "@/lib/behavioral-profile";
 import { validateTrustScore } from "@/lib/trust-score";
 import { analysisCache } from "@/lib/cache";
@@ -215,9 +215,9 @@ export async function POST(request: NextRequest) {
       }
 
       const client = createVeniceClient(apiKey);
-      const model = await resolveModel(client);
+      // Skip resolveModel API call — hardcode to save ~2-3s network round-trip
       try {
-        const rawScore = await analyzeAgent(client, enrichedData, model);
+        const rawScore = await analyzeAgent(client, enrichedData);
         trustScore = validateTrustScore(rawScore);
       } catch (veniceErr) {
         console.error("[/api/analyze] Venice AI failed:", veniceErr);
