@@ -6,6 +6,7 @@ import { getAgentIdentity, findAgentByAddress } from "@/lib/erc8004";
 import { publishAttestation } from "@/lib/attestation";
 import { createVeniceClient, analyzeAgent, resolveModel, createMockTrustScore } from "@/lib/venice";
 import { computeBehavioralProfile } from "@/lib/behavioral-profile";
+import { classifyEntityType } from "@/lib/entity-classifier";
 import { validateTrustScore } from "@/lib/trust-score";
 import { analysisCache } from "@/lib/cache";
 import { getETHPrice } from "@/lib/price";
@@ -199,6 +200,16 @@ export async function POST(request: NextRequest) {
       } catch { /* reverse lookup failed — non-fatal */ }
     }
 
+    // 4.2. Classify entity type (agent vs protocol contract vs user wallet)
+    const entityClassification = classifyEntityType({
+      address: agentData.address,
+      transactions: agentData.transactions,
+      addressInfo: agentData.addressInfo,
+      smartContractData: agentData.smartContractData,
+      walletClassification: agentData.computedMetrics?.walletClassification,
+      isERC8004Registered: effectiveAgentId !== null,
+    });
+
     // 5. Analyze via Venice (or mock)
     let trustScore;
     if (USE_MOCK) {
@@ -251,6 +262,8 @@ export async function POST(request: NextRequest) {
       ensName: agentData.addressInfo?.ensName || null,
       chainResults: chainResults.length > 0 ? chainResults : undefined,
       sampleContext: behavioralProfile.sampleContext,
+      entityType: entityClassification.entityType,
+      entityClassification,
     };
 
     analysisCache.set(cacheKey, response);
