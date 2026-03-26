@@ -116,13 +116,20 @@ export async function POST(request: NextRequest) {
     if (cached) return NextResponse.json(cached);
 
     // 3. Fetch onchain data — start ETH price fetch in parallel to save time
+    //    Budget: 25s max for data fetching so Venice has ~30s of the 60s limit
+    const FETCH_TIMEOUT_MS = 25_000;
     const ethPricePromise = getETHPrice();
 
     let agentData;
     if (selectedChain === "all" && chainResults.length > 1) {
       // Fetch from all active chains in parallel (allSettled so one flaky chain doesn't kill the request)
       const allChainSettled = await Promise.allSettled(
-        chainResults.map(cr => fetchAgentData(cr.chainId as ChainId, resolved.address)),
+        chainResults.map(cr =>
+          Promise.race([
+            fetchAgentData(cr.chainId as ChainId, resolved.address),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("fetch_timeout")), FETCH_TIMEOUT_MS)),
+          ]),
+        ),
       );
       const allChainData = allChainSettled
         .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof fetchAgentData>>> => r.status === "fulfilled")
@@ -154,7 +161,10 @@ export async function POST(request: NextRequest) {
       };
     } else {
       const fetchChain = chainResults.length === 1 ? chainResults[0].chainId as ChainId : resolved.chainId;
-      agentData = await fetchAgentData(fetchChain, resolved.address);
+      agentData = await Promise.race([
+        fetchAgentData(fetchChain, resolved.address),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("fetch_timeout")), FETCH_TIMEOUT_MS)),
+      ]);
     }
     const ethPrice = await ethPricePromise;
 
