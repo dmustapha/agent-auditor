@@ -216,8 +216,20 @@ export async function POST(request: NextRequest) {
 
       const client = createVeniceClient(apiKey);
       const model = await resolveModel(client);
-      const rawScore = await analyzeAgent(client, enrichedData, model);
-      trustScore = validateTrustScore(rawScore);
+      try {
+        const rawScore = await analyzeAgent(client, enrichedData, model);
+        trustScore = validateTrustScore(rawScore);
+      } catch (veniceErr) {
+        console.error("[/api/analyze] Venice AI failed:", veniceErr);
+        const msg = veniceErr instanceof Error ? veniceErr.message : "AI analysis failed";
+        return NextResponse.json(
+          {
+            error: "analysis_failed",
+            message: `AI analysis failed: ${msg.includes("aborted") ? "Request timed out. Try a specific chain instead of All Chains." : msg}`,
+          } satisfies AnalyzeErrorResponse,
+          { status: 502 },
+        );
+      }
     }
 
     // 6. Attempt on-chain attestation (non-blocking)
@@ -251,11 +263,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(response);
   } catch (err) {
     console.error("[/api/analyze] Error:", err);
-    const isDev = process.env.NODE_ENV === "development";
     return NextResponse.json(
       {
         error: "internal_error",
-        message: isDev && err instanceof Error ? err.message : "An unexpected error occurred",
+        message: err instanceof Error ? err.message : "An unexpected error occurred",
       } satisfies AnalyzeErrorResponse,
       { status: 500 },
     );
