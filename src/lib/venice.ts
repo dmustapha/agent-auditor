@@ -1204,10 +1204,8 @@ Latest: ${lastETH} ETH (${new Date(last.timestamp).toISOString()})
     } catch { return ""; }
   })() : "";
 
-  const eventsSection = sanitizedData.eventLogs?.length ? `
-=== RECENT EVENTS (last 10) ===
-${JSON.stringify(sanitizedData.eventLogs.slice(-10), null, 2)}
-` : "";
+  // Skip raw event logs — too large for heavy addresses, behavioral profile already summarizes them
+  const eventsSection = "";
 
   const addressInfoSection = sanitizedData.addressInfo ? `
 === ADDRESS INFO ===
@@ -1296,7 +1294,7 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
 
   // Venice doesn't support json_schema response_format — rely on system prompt + JSON parsing
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+  const timeoutId = setTimeout(() => controller.abort(), 45_000);
 
   let response;
   try {
@@ -1316,7 +1314,7 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
     );
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("Venice AI timed out after 30 seconds. Please try again.");
+      throw new Error("Venice AI timed out after 45 seconds. Please try again.");
     }
     throw err;
   } finally {
