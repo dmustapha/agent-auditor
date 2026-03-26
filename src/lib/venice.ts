@@ -1296,7 +1296,7 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
 
   // Venice doesn't support json_schema response_format — rely on system prompt + JSON parsing
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90_000);
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
   let response;
   try {
@@ -1305,7 +1305,7 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
         model: modelId,
         messages,
         temperature: 0.7,
-        max_tokens: 4096,
+        max_tokens: 2048,
         // @ts-expect-error venice_parameters not in OpenAI types
         venice_parameters: {
           enable_e2ee: true,
@@ -1316,7 +1316,7 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
     );
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("Venice AI timed out after 90 seconds. Please try again.");
+      throw new Error("Venice AI timed out after 30 seconds. Please try again.");
     }
     throw err;
   } finally {

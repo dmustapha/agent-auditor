@@ -216,8 +216,18 @@ export async function POST(request: NextRequest) {
 
       const client = createVeniceClient(apiKey);
       const model = await resolveModel(client);
-      const rawScore = await analyzeAgent(client, enrichedData, model);
-      trustScore = validateTrustScore(rawScore);
+      try {
+        const rawScore = await analyzeAgent(client, enrichedData, model);
+        trustScore = validateTrustScore(rawScore);
+      } catch (veniceErr) {
+        // Venice timed out or failed — fall back to mock score with real behavioral data
+        console.warn("[/api/analyze] Venice failed, falling back to mock:", veniceErr);
+        trustScore = createMockTrustScore(
+          resolved.address,
+          resolved.chainId,
+          enrichedData.transactions.length,
+        );
+      }
     }
 
     // 6. Attempt on-chain attestation (non-blocking)
