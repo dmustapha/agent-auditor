@@ -93,7 +93,12 @@ async function resolveAddress(
     };
   }
 
-  // Auto-detect chain with activity
+  // Solana addresses skip EVM chain detection — go straight to solana
+  if (isSolana) {
+    return { address, chainId: "solana", resolvedVia: "address" };
+  }
+
+  // Auto-detect chain with activity (EVM only)
   const detectedChain = await detectChainWithActivity(address);
   if (detectedChain) {
     const agentId = await findAgentByAddress(detectedChain, address).catch(() => null);
