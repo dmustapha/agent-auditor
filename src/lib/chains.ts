@@ -12,7 +12,7 @@ import {
   optimismSepolia,
 } from "viem/chains";
 import { createPublicClient, http, type Chain } from "viem";
-import type { ChainId, ChainConfig } from "./types";
+import type { ChainId, ChainConfig, SolanaChainConfig } from "./types";
 
 // ─── Use testnet flag from environment ───────────────────────────────────────
 
@@ -34,7 +34,7 @@ const ERC8004 = IS_TESTNET ? ERC8004_TESTNET : ERC8004_MAINNET;
 
 // ─── Chain Configurations ────────────────────────────────────────────────────
 
-export const SUPPORTED_CHAINS: Record<ChainId, ChainConfig> = {
+export const SUPPORTED_CHAINS: Record<string, ChainConfig> = {
   base: {
     id: "base",
     name: "Base",
@@ -93,6 +93,24 @@ export const SUPPORTED_CHAINS: Record<ChainId, ChainConfig> = {
   },
 } as const;
 
+// ─── Solana Chain Configuration ─────────────────────────────────────────────
+
+export const SOLANA_CHAIN_CONFIG: SolanaChainConfig = {
+  id: "solana",
+  name: "Solana",
+  covalentChainName: "solana-mainnet",
+  solanaRpcUrl: process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com",
+  explorer: "https://solscan.io",
+};
+
+export function isSolanaChain(chainId: string): chainId is "solana" {
+  return chainId === "solana";
+}
+
+export function getSolanaConfig(): SolanaChainConfig {
+  return SOLANA_CHAIN_CONFIG;
+}
+
 // ─── Helper Functions ────────────────────────────────────────────────────────
 
 export function getChainConfig(chainId: ChainId): ChainConfig {
@@ -106,12 +124,12 @@ export function getAllChains(): ChainConfig[] {
 }
 
 export function getAllChainIds(): ChainId[] {
-  return Object.keys(SUPPORTED_CHAINS) as ChainId[];
+  return [...Object.keys(SUPPORTED_CHAINS) as ChainId[], "solana"];
 }
 
 // ─── Viem Chain Object Map ───────────────────────────────────────────────────
 
-const VIEM_CHAINS: Record<ChainId, Chain> = {
+const VIEM_CHAINS: Record<string, Chain> = {
   base: IS_TESTNET ? baseSepolia : base,
   gnosis: IS_TESTNET ? gnosisChiado : gnosis,
   ethereum: IS_TESTNET ? sepolia : mainnet,

@@ -1,6 +1,7 @@
 // ─── Chain Types ─────────────────────────────────────────────────────────────
 
-export type ChainId = "base" | "gnosis" | "ethereum" | "arbitrum" | "optimism" | "polygon";
+export type EvmChainId = "base" | "gnosis" | "ethereum" | "arbitrum" | "optimism" | "polygon";
+export type ChainId = EvmChainId | "solana";
 
 export interface ChainConfig {
   readonly id: ChainId;
@@ -13,6 +14,14 @@ export interface ChainConfig {
     readonly reputationRegistry: `0x${string}`;
   };
   readonly olasRegistry?: `0x${string}`;
+  readonly explorer: string;
+}
+
+export interface SolanaChainConfig {
+  readonly id: "solana";
+  readonly name: string;
+  readonly covalentChainName: string;
+  readonly solanaRpcUrl: string;
   readonly explorer: string;
 }
 
