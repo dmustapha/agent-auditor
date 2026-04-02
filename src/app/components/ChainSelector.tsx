@@ -17,6 +17,7 @@ const CHAIN_OPTIONS: { value: ChainId | "all"; label: string }[] = [
   { value: "arbitrum", label: "Arbitrum" },
   { value: "optimism", label: "Optimism" },
   { value: "polygon", label: "Polygon" },
+  { value: "solana", label: "◎ Solana" },
 ];
 
 function getLabel(value: ChainId | "all"): string {

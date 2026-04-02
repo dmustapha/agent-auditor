@@ -4,15 +4,12 @@ import { detectInputType, resolveInput } from "@/lib/resolver";
 import { fetchAgentData, detectAllChainsWithActivity } from "@/lib/blockscout";
 import { getAgentIdentity, findAgentByAddress } from "@/lib/erc8004";
 import { publishAttestation } from "@/lib/attestation";
-import { createVeniceClient, analyzeAgent, resolveModel, createMockTrustScore } from "@/lib/venice";
-import { computeBehavioralProfile } from "@/lib/behavioral-profile";
-import { classifyEntityType } from "@/lib/entity-classifier";
-import { validateTrustScore } from "@/lib/trust-score";
+import { enrichAndAnalyze } from "@/lib/analyze-pipeline";
 import { analysisCache } from "@/lib/cache";
 import { getETHPrice } from "@/lib/price";
 import { checkRateLimit } from "@/lib/rate-limit";
-
-const USE_MOCK = process.env.VENICE_MOCK === "true";
+import { fetchSolanaAgentData, isValidSolanaAddress } from "@/lib/solana";
+import { isSolanaChain } from "@/lib/chains";
 
 export const maxDuration = 60;
 
@@ -50,7 +47,7 @@ export async function POST(request: NextRequest) {
     // 1. Detect input type (or use provided)
     const inputType: InputType = body.inputType ?? detectInputType(input);
 
-    const VALID_CHAINS = new Set<ChainId | "all">(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "all"]);
+    const VALID_CHAINS = new Set<ChainId | "all">(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "solana", "all"]);
     if (chain && !VALID_CHAINS.has(chain as ChainId | "all")) {
       return NextResponse.json(
         { error: "invalid_input", message: "Invalid chain" } satisfies AnalyzeErrorResponse,
@@ -139,12 +136,13 @@ export async function POST(request: NextRequest) {
       const primary = allChainData[0];
       const mergedTransactions = allChainData.flatMap(d =>
         d.transactions.map(tx => ({ ...tx, chainId: d.chainId } as TransactionSummary & { chainId: string })),
-      );
+      ).filter(tx => Number.isFinite(tx.timestamp));
       // Sort by timestamp descending
       mergedTransactions.sort((a, b) => b.timestamp - a.timestamp);
       const mergedTokenTransfers = allChainData.flatMap(d => d.tokenTransfers);
       const mergedContractCalls = allChainData.flatMap(d => d.contractCalls);
-      const mergedCoinBalance = allChainData.flatMap(d => d.coinBalanceHistory ?? []);
+      const mergedCoinBalance = allChainData.flatMap(d => d.coinBalanceHistory ?? [])
+        .filter(p => Number.isFinite(p.timestamp));
 
       agentData = {
         ...primary,
@@ -160,21 +158,16 @@ export async function POST(request: NextRequest) {
       );
     } else {
       const fetchChain = chainResults.length === 1 ? chainResults[0].chainId as ChainId : resolved.chainId;
-      agentData = await fetchAgentData(fetchChain, resolved.address);
+      if (isSolanaChain(fetchChain)) {
+        agentData = await fetchSolanaAgentData(resolved.address);
+      } else {
+        agentData = await fetchAgentData(fetchChain, resolved.address);
+      }
       totalTxCountForProfile = agentData.addressInfo?.transactionsCount;
     }
     const ethPrice = await ethPricePromise;
 
-    // 3.5. Compute behavioral profile (local analysis, no new external APIs)
-    const behavioralProfile = await computeBehavioralProfile(
-      agentData.address, agentData.chainId,
-      agentData.transactions, agentData.tokenTransfers,
-      agentData.contractCalls, agentData.coinBalanceHistory ?? [],
-      totalTxCountForProfile,
-    );
-    const enrichedData = { ...agentData, behavioralProfile };
-
-    // 4. Try to get agent identity (may not be registered on ERC-8004)
+    // 3.5. Resolve agent identity (may not be registered on ERC-8004)
     let agentIdentity = null;
     let effectiveAgentId: bigint | null = resolved.agentId ?? null;
     if (resolved.agentId) {
@@ -185,7 +178,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4.1. Discover agent ID via reverse lookup if not resolved (3s timeout — non-blocking)
+    // 3.6. Discover agent ID via reverse lookup if not resolved (3s timeout — non-blocking)
     // Skip when resolveInput already tried findAgentByAddress for this chain+address
     if (effectiveAgentId === null && resolved.resolvedVia !== "address") {
       try {
@@ -200,45 +193,12 @@ export async function POST(request: NextRequest) {
       } catch { /* reverse lookup failed — non-fatal */ }
     }
 
-    // 4.2. Classify entity type (agent vs protocol contract vs user wallet)
-    const entityClassification = classifyEntityType({
-      address: agentData.address,
-      transactions: agentData.transactions,
-      addressInfo: agentData.addressInfo,
-      smartContractData: agentData.smartContractData,
-      walletClassification: agentData.computedMetrics?.walletClassification,
+    // 4. Enrichment + Venice analysis via shared pipeline
+    const { trustScore, entityClassification, behavioralProfile } = await enrichAndAnalyze({
+      agentData,
+      totalTxCount: totalTxCountForProfile,
       isERC8004Registered: effectiveAgentId !== null,
     });
-
-    // 4.3. Enrich data with entity classification + sample context for Venice prompt
-    const enrichedForVenice = { ...enrichedData, entityClassification, sampleContext: behavioralProfile.sampleContext };
-
-    // 5. Analyze via Venice (or mock)
-    let trustScore;
-    if (USE_MOCK) {
-      trustScore = createMockTrustScore(
-        resolved.address,
-        resolved.chainId,
-        enrichedData.transactions.length,
-      );
-    } else {
-      const apiKey = process.env.VENICE_API_KEY;
-      if (!apiKey) {
-        return NextResponse.json(
-          {
-            error: "analysis_unavailable",
-            message: "AI analysis unavailable. Raw data returned.",
-            transactions: enrichedData.transactions.slice(0, 20),
-          } satisfies AnalyzeErrorResponse,
-          { status: 503 },
-        );
-      }
-
-      const client = createVeniceClient(apiKey);
-      const model = await resolveModel(client);
-      const rawScore = await analyzeAgent(client, enrichedForVenice, model);
-      trustScore = validateTrustScore(rawScore);
-    }
 
     // 6. Attempt on-chain attestation (non-blocking)
     let attestationTxHash: string | undefined;
@@ -255,10 +215,10 @@ export async function POST(request: NextRequest) {
     const response: AnalyzeResponse = {
       trustScore,
       agentIdentity,
-      transactions: enrichedData.transactions.slice(0, 20),
-      fetchedTransactionCount: enrichedData.transactions.length,
-      walletClassification: enrichedData.computedMetrics?.walletClassification,
-      successRate: enrichedData.computedMetrics?.successRate,
+      transactions: agentData.transactions.slice(0, 20),
+      fetchedTransactionCount: agentData.transactions.length,
+      walletClassification: agentData.computedMetrics?.walletClassification,
+      successRate: agentData.computedMetrics?.successRate,
       ethPrice: ethPrice ?? undefined,
       attestationTxHash,
       behavioralProfile,

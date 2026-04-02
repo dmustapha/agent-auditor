@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { ChainId, TransactionSummary } from "@/lib/types";
-import { getChainConfig } from "@/lib/chains";
+import { getChainConfig, isSolanaChain } from "@/lib/chains";
 import { getMethodLabel } from "../../lib/method-labels";
+import { getSolanaProgramName } from "@/lib/solana-programs";
 
 interface TransactionTableProps {
   transactions: readonly TransactionSummary[];
@@ -16,8 +17,13 @@ function truncateHash(hash: string): string {
   return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
 }
 
-function formatValue(wei: string): string {
+function formatValue(wei: string, chainId?: ChainId): string {
   try {
+    if (chainId && isSolanaChain(chainId)) {
+      const sol = Number(BigInt(wei || "0")) / 1_000_000_000;
+      if (sol === 0) return "0";
+      return sol.toFixed(4);
+    }
     const eth = Number(BigInt(wei)) / 1e18;
     if (eth === 0) return "0";
     if (eth >= 0.001) return eth.toFixed(4);
@@ -59,7 +65,7 @@ function CopyCell({ address, display }: { address: string; display: string }) {
 }
 
 export function TransactionTable({ transactions, chainId, totalCount, agentAddress }: TransactionTableProps) {
-  const explorerBase = getChainConfig(chainId).explorer;
+  const explorerBase = isSolanaChain(chainId) ? "https://solscan.io" : getChainConfig(chainId).explorer;
 
   if (transactions.length === 0) {
     return (
@@ -100,7 +106,7 @@ export function TransactionTable({ transactions, chainId, totalCount, agentAddre
               <th scope="col">Action</th>
               <th scope="col">From</th>
               <th scope="col">To</th>
-              <th scope="col" style={{ textAlign: "right" }}>Value (ETH)</th>
+              <th scope="col" style={{ textAlign: "right" }}>Value ({isSolanaChain(chainId) ? "SOL" : "ETH"})</th>
               <th scope="col" style={{ width: "2rem" }}></th>
               <th scope="col" style={{ textAlign: "right" }}>Time</th>
             </tr>
@@ -121,6 +127,15 @@ export function TransactionTable({ transactions, chainId, totalCount, agentAddre
                 </td>
                 <td>
                   {(() => {
+                    if (isSolanaChain(chainId)) {
+                      const programName = tx.to ? getSolanaProgramName(tx.to) : null;
+                      return (
+                        <span style={{ fontSize: "0.75rem" }}>
+                          <span style={{ color: "var(--color-accent)" }}>{tx.methodId || "tx"}</span>
+                          {programName && <span style={{ color: "var(--color-text-dim)" }}> via {programName}</span>}
+                        </span>
+                      );
+                    }
                     const label = getMethodLabel(tx.methodId);
                     if (label) {
                       return (
@@ -140,7 +155,7 @@ export function TransactionTable({ transactions, chainId, totalCount, agentAddre
                 <td><CopyCell address={tx.from} display={truncateHash(tx.from)} /></td>
                 <td><CopyCell address={tx.to} display={truncateHash(tx.to)} /></td>
                 <td style={{ textAlign: "right", color: "#f2f0eb", fontSize: "0.8125rem" }}>
-                  {formatValue(tx.value)}
+                  {formatValue(tx.value, chainId)}
                 </td>
                 <td style={{ textAlign: "center" }}>
                   <span
