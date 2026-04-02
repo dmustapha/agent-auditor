@@ -3,6 +3,7 @@ import type { ChainId, InputType, ResolvedInput } from "./types";
 import { getPublicClient, getAllChainIds } from "./chains";
 import { getAgentIdentity, findAgentByAddress, searchAgentsByName } from "./erc8004";
 import { detectChainWithActivity } from "./blockscout";
+import { isValidSolanaAddress } from "./solana";
 
 // ─── Input Type Detection ────────────────────────────────────────────────────
 
@@ -12,6 +13,8 @@ export function detectInputType(input: string): InputType {
   if (/^\d+$/.test(trimmed)) return "agentId";
   if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) return "address";
   if (trimmed.endsWith(".eth")) return "ens";
+  // Solana address detection (base58, 32-44 chars, no 0x prefix)
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed) && isValidSolanaAddress(trimmed)) return "address";
   return "name";
 }
 

@@ -6,6 +6,7 @@ import type {
   WalletClassification,
 } from "./types";
 import { resolveProtocolName } from "./protocol-registry";
+import { resolveSolanaProgram } from "./solana-programs";
 
 // ─── Input Interface ────────────────────────────────────────────────────────
 
@@ -72,6 +73,19 @@ export function classifyEntityType(
   const isContract = addressInfo?.isContract ?? false;
   const fromRatio = computeFromRatio(address, transactions);
   const signals: string[] = [];
+
+  // ─── Solana-Specific Classification ──────────────────────────────────
+  const solanaProgram = resolveSolanaProgram(address);
+  if (solanaProgram) {
+    signals.push(`solana program registry: ${solanaProgram.name}`);
+    return {
+      entityType: "PROTOCOL_CONTRACT",
+      confidence: "DEFINITIVE",
+      signals,
+      fromRatio,
+      primarySignal: `solana program: ${solanaProgram.name}`,
+    };
+  }
 
   // Step 1: Protocol registry match
   const protocolName = resolveProtocolName(address);
@@ -162,7 +176,24 @@ export function classifyEntityType(
     }
   }
 
-  // Step 8: Unknown
+  // Step 7.5: EOA/wallet fallback
+  // Catches true EOAs and Blockscout false positives (isContract=true but behavioral analysis disagrees)
+  const likelyEOA = !isContract || (isContract && walletClassification && !walletClassification.isDefinitelyContract);
+  if (likelyEOA) {
+    const signal = !isContract
+      ? "EOA without strong classification signals"
+      : "behavioral analysis overrides Blockscout isContract flag";
+    signals.push(signal);
+    return {
+      entityType: "USER_WALLET",
+      confidence: "LOW",
+      signals,
+      fromRatio,
+      primarySignal: signal,
+    };
+  }
+
+  // Step 8: Unknown (contracts with ambiguous signals)
   signals.push("no definitive signals");
   return {
     entityType: "UNKNOWN",

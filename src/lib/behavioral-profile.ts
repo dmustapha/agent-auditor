@@ -7,6 +7,8 @@ import type {
 import { METHOD_REGISTRY } from "./agent-classifier";
 import { resolveProtocolName } from "./protocol-registry";
 import { computeSampleContext } from "./metrics";
+import { getSolanaProgramCategory, getSolanaProgramName } from "./solana-programs";
+import { isSolanaChain } from "./chains";
 
 // ─── Activity Category Mapping ──────────────────────────────────────────────
 
@@ -45,6 +47,64 @@ const METHOD_TO_CATEGORY: Record<string, ActivityCategory["category"]> = {
   "0x11d62ed7": "swapping", "0xf242432a": "swapping", "0x0d4d1513": "swapping",
 };
 
+// ─── Solana Activity Breakdown ──────────────────────────────────────────────
+
+function computeSolanaActivityBreakdown(
+  txs: readonly TransactionSummary[],
+  contractCalls: readonly ContractCall[],
+): ActivityCategory[] {
+  const categoryMap = new Map<ActivityCategory["category"], { count: number; protocols: Set<string> }>();
+
+  for (const call of contractCalls) {
+    const category = getSolanaProgramCategory(call.contract);
+    const name = getSolanaProgramName(call.contract);
+    const entry = categoryMap.get(category) ?? { count: 0, protocols: new Set<string>() };
+    entry.count++;
+    entry.protocols.add(name);
+    categoryMap.set(category, entry);
+  }
+
+  if (contractCalls.length === 0) {
+    for (const tx of txs) {
+      const category: ActivityCategory["category"] = tx.value !== "0" ? "transfers" : "other";
+      const entry = categoryMap.get(category) ?? { count: 0, protocols: new Set<string>() };
+      entry.count++;
+      categoryMap.set(category, entry);
+    }
+  }
+
+  const total = Math.max(contractCalls.length, txs.length, 1);
+  return Array.from(categoryMap.entries())
+    .map(([category, { count, protocols }]) => ({
+      category,
+      percentage: Math.round((count / total) * 100),
+      txCount: count,
+      protocols: [...protocols],
+    }))
+    .sort((a, b) => b.txCount - a.txCount);
+}
+
+function computeSolanaProtocolLoyalty(contractCalls: readonly ContractCall[]): string {
+  const protocolCounts = new Map<string, number>();
+  let totalSwaps = 0;
+
+  for (const call of contractCalls) {
+    const category = getSolanaProgramCategory(call.contract);
+    if (category === "swapping") {
+      totalSwaps++;
+      const name = getSolanaProgramName(call.contract);
+      protocolCounts.set(name, (protocolCounts.get(name) ?? 0) + 1);
+    }
+  }
+
+  if (totalSwaps === 0) return "No swap activity detected";
+  const top = Array.from(protocolCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const topPct = Math.round((top[0][1] / totalSwaps) * 100);
+  if (topPct >= 80) return `${topPct}% of swaps through ${top[0][0]} — high protocol loyalty`;
+  if (top.length >= 3) return `Diversified: ${top.slice(0, 3).map(([p, c]) => `${p} (${Math.round((c / totalSwaps) * 100)}%)`).join(", ")}`;
+  return `Primary DEX: ${top[0][0]} (${topPct}%)`;
+}
+
 // ─── Main Function ──────────────────────────────────────────────────────────
 
 export async function computeBehavioralProfile(
@@ -62,7 +122,9 @@ export async function computeBehavioralProfile(
 
   return {
     lifeEvents: computeLifeEvents(sortedTxs, coinBalanceHistory, selfLower),
-    activityBreakdown: computeActivityBreakdown(validTxs),
+    activityBreakdown: isSolanaChain(chainId)
+      ? computeSolanaActivityBreakdown(validTxs, _contractCalls)
+      : computeActivityBreakdown(validTxs),
     topCounterparties: await resolveTopCounterparties(validTxs, selfLower, chainId),
     failedTxAnalysis: computeFailedTxAnalysis(validTxs),
     timezoneFingerprint: computeTimezoneFingerprint(validTxs),
@@ -73,7 +135,9 @@ export async function computeBehavioralProfile(
       ? Math.round((sortedTxs[sortedTxs.length - 1].timestamp - sortedTxs[0].timestamp) / 86_400_000)
       : 0,
     firstAction: describeFirstAction(sortedTxs[0], selfLower),
-    protocolLoyalty: computeProtocolLoyalty(validTxs),
+    protocolLoyalty: isSolanaChain(chainId)
+      ? computeSolanaProtocolLoyalty(_contractCalls)
+      : computeProtocolLoyalty(validTxs),
     busiestDay: computeBusiestDay(sortedTxs),
     longestDormancy: computeLongestDormancy(sortedTxs),
     sampleContext: computeSampleContext(validTxs.length, totalTransactionCount ?? validTxs.length),
@@ -314,7 +378,7 @@ async function resolveTopCounterparties(
 
   // Resolve names via static registry only (no Blockscout API calls — saves 3-8s per request)
   return top5.map(([addr, data]) => {
-    const name = resolveProtocolName(addr);
+    const name = resolveProtocolName(addr) ?? getSolanaProgramName(addr);
 
     const totalVolume = data.inbound + data.outbound;
     const direction: ResolvedCounterparty["direction"] =

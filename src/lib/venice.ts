@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag, ActivityProfile, BehavioralProfile, SampleContext } from "./types";
+import type { ChainId, AgentTransactionData, AgentType, AgentMetrics, TrustScore, TrustFlag, ActivityProfile, BehavioralProfile, SampleContext, EntityType } from "./types";
 import { sanitizeForPrompt } from "./sanitize";
 import { METHOD_REGISTRY } from "./agent-classifier";
 import { computeBreakdown } from "./breakdown";
@@ -206,7 +206,17 @@ The difference: BAD just lists numbers. GOOD interprets them, compares to norms,
 CRITICAL OUTPUT RULES:
 1. Your "summary" field MUST be 4-6 sentences. Lead with the most interesting finding, not a description of what the agent is. End with a clear risk verdict with reasoning. Reference specific numbers but INTERPRET them — don't just list them.
 2. Your "behavioralNarrative" field MUST be 5-8 sentences telling the STORY of this agent — what changed over time, what's unusual, what stands out. Written in past tense like a detective's case file.
-3. NEVER return empty strings for summary or behavioralNarrative. These are the most important fields.`;
+3. NEVER return empty strings for summary or behavioralNarrative. These are the most important fields.
+
+SOLANA-SPECIFIC CONTEXT (when chainId is "solana"):
+- Solana uses "programs" not "contracts". Programs are identified by base58 addresses.
+- Transaction fees are in lamports (1 SOL = 1,000,000,000 lamports). Typical tx fee: 5000 lamports.
+- Key programs: Jupiter (DEX aggregator), Raydium (AMM), Orca (CLMM), Marinade (staking), Jito (MEV tips).
+- Agent types on Solana: keeper bots, MEV searchers, arbitrage bots, liquidation bots, DCA executors.
+- "executable" flag in account info = program. Non-executable with System Program owner = wallet.
+- SOL value benchmarks: small tx < 1 SOL, medium 1-100 SOL, large > 100 SOL.
+- When analyzing Solana agents, use "SOL" instead of "ETH" in financial summaries.
+- Program interactions (CPI - Cross-Program Invocations) are the Solana equivalent of contract calls.`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -226,20 +236,35 @@ function extractFirstJsonObject(raw: string): string {
   return raw.slice(start);
 }
 
-/** Describe what the agent actually does based on type + protocols */
-function describeAgentActions(agentType: string, protocols: string[]): string {
+/** Describe what the agent actually does based on type + protocols + entity */
+function describeAgentActions(agentType: string, protocols: string[], entityType?: EntityType): string {
   const protocolStr = protocols.length > 0 ? protocols.join(" and ") : "DeFi protocols";
-  const TYPE_ACTIONS: Record<string, string> = {
-    KEEPER: `This automation bot executes keeper tasks and upkeeps on ${protocolStr}`,
-    ORACLE: `This oracle node transmits price feed data for ${protocolStr}`,
-    LIQUIDATOR: `This liquidation bot monitors and liquidates undercollateralized positions on ${protocolStr}`,
-    MEV_BOT: `This MEV bot extracts value through arbitrage and frontrunning across ${protocolStr}`,
-    BRIDGE_RELAYER: `This bridge relayer processes cross-chain message delivery and token transfers via ${protocolStr}`,
-    DEX_TRADER: `This trading agent executes token swaps and trades on ${protocolStr}`,
-    GOVERNANCE: `This governance participant executes multisig transactions and votes via ${protocolStr}`,
-    YIELD_OPTIMIZER: `This yield farming agent supplies liquidity and optimizes returns on ${protocolStr}`,
+  // Separate default nouns from action verbs — entity type overrides the noun
+  const TYPE_NOUNS: Record<string, string> = {
+    KEEPER: "automation bot", ORACLE: "oracle node", LIQUIDATOR: "liquidation bot",
+    MEV_BOT: "MEV bot", BRIDGE_RELAYER: "bridge relayer", DEX_TRADER: "trading agent",
+    GOVERNANCE: "governance participant", YIELD_OPTIMIZER: "yield farming agent",
   };
-  return TYPE_ACTIONS[agentType] ?? `This agent interacts with ${protocolStr}`;
+  const TYPE_VERBS: Record<string, string> = {
+    KEEPER: `executes keeper tasks and upkeeps on ${protocolStr}`,
+    ORACLE: `transmits price feed data for ${protocolStr}`,
+    LIQUIDATOR: `monitors and liquidates undercollateralized positions on ${protocolStr}`,
+    MEV_BOT: `extracts value through arbitrage and frontrunning across ${protocolStr}`,
+    BRIDGE_RELAYER: `processes cross-chain message delivery and token transfers via ${protocolStr}`,
+    DEX_TRADER: `executes token swaps and trades on ${protocolStr}`,
+    GOVERNANCE: `executes multisig transactions and votes via ${protocolStr}`,
+    YIELD_OPTIMIZER: `supplies liquidity and optimizes returns on ${protocolStr}`,
+  };
+  const verb = TYPE_VERBS[agentType];
+  if (verb) {
+    const noun = entityType === "PROTOCOL_CONTRACT" ? "protocol contract"
+      : entityType === "USER_WALLET" ? "wallet"
+      : TYPE_NOUNS[agentType] ?? "agent";
+    return `This ${noun} ${verb}`;
+  }
+  // Fallback for unknown agent types
+  const noun = entityType ? entityNoun(entityType) : { subject: "this address" };
+  return `${capitalize(noun.subject)} interacts with ${protocolStr}`;
 }
 
 // ─── Analyst-Quality Summary Generator ──────────────────────────────────────
@@ -290,9 +315,24 @@ function fmtETH(value: number): string {
 // Each agent type gets a narrative generator that tells its specific story.
 // ─────────────────────────────────────────────────────────────
 
+function entityNoun(entityType: EntityType): { subject: string; comparison: string } {
+  switch (entityType) {
+    case "AUTONOMOUS_AGENT": return { subject: "this agent", comparison: "similar agents" };
+    case "PROTOCOL_CONTRACT": return { subject: "this contract", comparison: "similar contracts" };
+    case "USER_WALLET": return { subject: "this wallet", comparison: "similar wallets" };
+    default: return { subject: "this address", comparison: "similar addresses" };
+  }
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 interface SummaryContext {
   agentType: string;
   typeName: string;
+  entityType: EntityType;
+  noun: { subject: string; comparison: string };
   chainId: string;
   score: number;
   metrics: AgentMetrics;
@@ -319,7 +359,7 @@ function buildSummaryContext(
   agentType: string, chainId: string, score: number,
   metrics: AgentMetrics, protocols: readonly string[],
   flags: readonly TrustFlag[], txCount: number, profile?: BehavioralProfile,
-  sampleContext?: SampleContext,
+  sampleContext?: SampleContext, entityType?: EntityType,
 ): SummaryContext {
   const bench = TYPE_BENCHMARKS[agentType] ?? TYPE_BENCHMARKS.UNKNOWN;
   const filteredProtocols = protocols.filter(p =>
@@ -335,8 +375,10 @@ function buildSummaryContext(
   const ageStr = ageDays !== null
     ? ageDays > 365 ? `${Math.floor(ageDays / 365)}+ year` : `${ageDays}-day`
     : "";
+  const resolvedEntityType = entityType ?? "UNKNOWN";
+  const noun = entityNoun(resolvedEntityType);
   return {
-    agentType, typeName, chainId, score, metrics, bench, protocols,
+    agentType, typeName, entityType: resolvedEntityType, noun, chainId, score, metrics, bench, protocols,
     protocolStr, flags, txCount, profile, ageStr, ageDays, lowCoverage: !!isSampleDerived,
     totalTxCount: sampleContext?.totalTransactionCount ?? txCount,
     successPct: (metrics.successRate * 100).toFixed(1),
@@ -451,14 +493,15 @@ function describeActivities(ctx: SummaryContext): string {
 
 function describeFinancials(ctx: SummaryContext): string {
   const parts: string[] = [];
+  const subj = capitalize(ctx.noun.subject);
   if (ctx.netFlow > 0.01 || ctx.netFlow < -0.01) {
     if (ctx.netFlow > 0) {
-      parts.push(`This agent has earned more than it has spent — a net gain of +${fmtETH(ctx.netFlow)} ETH.${ctx.gasETH !== "0 ETH" ? ` Transaction fees cost ${ctx.gasETH}.` : ""}`);
+      parts.push(`${subj} has earned more than it has spent — a net gain of +${fmtETH(ctx.netFlow)} ETH.${ctx.gasETH !== "0 ETH" ? ` Transaction fees cost ${ctx.gasETH}.` : ""}`);
     } else {
-      parts.push(`This agent has spent more than it has received — a net loss of ${fmtETH(Math.abs(ctx.netFlow))} ETH.${ctx.gasETH !== "0 ETH" ? ` Transaction fees account for ${ctx.gasETH} of that.` : ""}`);
+      parts.push(`${subj} has spent more than it has received — a net loss of ${fmtETH(Math.abs(ctx.netFlow))} ETH.${ctx.gasETH !== "0 ETH" ? ` Transaction fees account for ${ctx.gasETH} of that.` : ""}`);
     }
   } else {
-    parts.push(`Very little money has moved through this agent — essentially break-even with ${fmtETH(ctx.netFlow)} ETH net.`);
+    parts.push(`Very little money has moved through ${ctx.noun.subject} — essentially break-even with ${fmtETH(ctx.netFlow)} ETH net.`);
   }
   const bs = ctx.profile?.balanceStory;
   if (bs) {
@@ -481,9 +524,9 @@ function describeReliability(ctx: SummaryContext): string {
   const fd = ctx.profile?.failedTxAnalysis;
   let line: string;
   if (ctx.successComparison === "above" || ctx.successComparison === "in line with") {
-    line = `${ctx.successPct}% of its ${txRef} succeed — that's ${ctx.successComparison === "above" ? "better" : "on par with"} the typical ${ctx.benchSuccessPct}% for similar agents.`;
+    line = `${ctx.successPct}% of its ${txRef} succeed — that's ${ctx.successComparison === "above" ? "better" : "on par with"} the typical ${ctx.benchSuccessPct}% for ${ctx.noun.comparison}.`;
   } else {
-    line = `Only ${ctx.successPct}% of its ${txRef} succeed, which is below the typical ${ctx.benchSuccessPct}% for this type of agent. ${failedTx} transactions failed`;
+    line = `Only ${ctx.successPct}% of its ${txRef} succeed, which is below the typical ${ctx.benchSuccessPct}% for ${ctx.noun.comparison}. ${failedTx} transactions failed`;
     if (fd?.mostCommonReason && fd.mostCommonReason !== "Unknown") line += `, mostly due to ${fd.mostCommonReason.toLowerCase()}`;
     line += ".";
   }
@@ -505,7 +548,7 @@ function describeTemporal(ctx: SummaryContext): string {
     // With low sample coverage, frequency metrics are unreliable — report scale instead
     parts.push(`An established address with ${ctx.totalTxCount.toLocaleString()} total transactions, interacting with ${ctx.metrics.uniqueCounterparties} different addresses in the sampled window.`);
   } else if (ctx.metrics.txFrequencyPerDay < 0.1) {
-    parts.push(`This agent is barely active — less than 1 transaction per day. It may be paused, abandoned, or only triggered by rare events.`);
+    parts.push(`${capitalize(ctx.noun.subject)} is barely active — less than 1 transaction per day. It may be paused, abandoned, or only triggered by rare events.`);
   } else if (ctx.metrics.txFrequencyPerDay > 50) {
     parts.push(`Highly active with ~${Math.round(ctx.metrics.txFrequencyPerDay)} transactions per day, interacting with ${ctx.metrics.uniqueCounterparties} different addresses.`);
   } else {
@@ -543,12 +586,12 @@ function buildRiskLines(ctx: SummaryContext): string {
 
 function buildWatchFor(ctx: SummaryContext): string {
   if (ctx.criticalFlags.length > 0) return `Watch for: ${ctx.criticalFlags[0].description}. If this gets worse, it should be investigated immediately.`;
-  if (!ctx.lowCoverage && ctx.metrics.txFrequencyPerDay < 0.1) return "Watch for: if this agent starts transacting again, it could mean it's back online. If it stays quiet past 90 days, it's likely been permanently shut down.";
+  if (!ctx.lowCoverage && ctx.metrics.txFrequencyPerDay < 0.1) return `Watch for: if ${ctx.noun.subject} starts transacting again, it could mean it's back online. If it stays quiet past 90 days, it's likely been permanently shut down.`;
   if (ctx.successComparison === "below" || ctx.successComparison === "well below") {
     const threshold = Math.max(50, Math.round(ctx.bench.successRate * 100) - 15);
-    return `Watch for: if the success rate drops below ${threshold}%, this agent may need to be reconfigured or replaced.`;
+    return `Watch for: if the success rate drops below ${threshold}%, ${ctx.noun.subject} may need to be reconfigured or replaced.`;
   }
-  if (ctx.netFlow < -5) return "Watch for: this agent is bleeding funds. At this rate, it could run out of money within weeks.";
+  if (ctx.netFlow < -5) return `Watch for: ${ctx.noun.subject} is bleeding funds. At this rate, it could run out of money within weeks.`;
   return `Watch for: so far the pattern looks ${ctx.score >= 70 ? "healthy" : "okay"}. Keep an eye out for sudden changes in behavior or interactions with unfamiliar addresses.`;
 }
 
@@ -556,7 +599,8 @@ function buildWatchFor(ctx: SummaryContext): string {
 // Each tells the STORY of what this type of agent does, adapted to what matters most.
 
 function narrativeKeeper(ctx: SummaryContext): string {
-  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} keeper agent on ${ctx.chainId}, working with ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+  const entityLabel = ctx.entityType === "AUTONOMOUS_AGENT" ? "keeper agent" : ctx.entityType === "USER_WALLET" ? "wallet running keeper tasks" : "keeper-style address";
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${entityLabel} on ${ctx.chainId}, working with ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
 
   // Keepers are like maintenance workers — they keep protocols running
   const keeperActivities = ctx.profile?.activityBreakdown?.filter(a => a.category === "keeper_ops") ?? [];
@@ -598,7 +642,8 @@ function narrativeKeeper(ctx: SummaryContext): string {
 }
 
 function narrativeDexTrader(ctx: SummaryContext): string {
-  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} DeFi trading agent on ${ctx.chainId}, active on ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+  const entityLabel = ctx.entityType === "USER_WALLET" ? "DeFi trader" : ctx.entityType === "PROTOCOL_CONTRACT" ? "DeFi trading contract" : "DeFi trading agent";
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${entityLabel} on ${ctx.chainId}, active on ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
 
   const swapActivity = ctx.profile?.activityBreakdown?.filter(a => a.category === "swapping") ?? [];
   const lpActivity = ctx.profile?.activityBreakdown?.filter(a => a.category === "lp_provision") ?? [];
@@ -664,7 +709,8 @@ function narrativeDexTrader(ctx: SummaryContext): string {
 }
 
 function narrativeMEVBot(ctx: SummaryContext): string {
-  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} MEV bot on ${ctx.chainId}, operating on ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+  const entityLabel = ctx.entityType === "USER_WALLET" ? "MEV-style wallet" : ctx.entityType === "PROTOCOL_CONTRACT" ? "MEV contract" : "MEV bot";
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${entityLabel} on ${ctx.chainId}, operating on ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
 
   const storyParts: string[] = [];
   storyParts.push("MEV bots are automated programs that profit by reordering, inserting, or front-running other people's transactions. They're controversial — they can increase costs for regular users.");
@@ -685,7 +731,8 @@ function narrativeMEVBot(ctx: SummaryContext): string {
 }
 
 function narrativeOracle(ctx: SummaryContext): string {
-  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} oracle agent on ${ctx.chainId}, providing data to ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+  const entityLabel = ctx.entityType === "PROTOCOL_CONTRACT" ? "oracle contract" : "oracle agent";
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${entityLabel} on ${ctx.chainId}, providing data to ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
 
   const storyParts: string[] = [];
   storyParts.push("Oracles are agents that feed real-world data (like prices) into blockchain protocols. They're critical infrastructure — if an oracle fails, the protocols depending on it can break.");
@@ -714,7 +761,8 @@ function narrativeOracle(ctx: SummaryContext): string {
 }
 
 function narrativeLiquidator(ctx: SummaryContext): string {
-  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} liquidation agent on ${ctx.chainId}, monitoring ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+  const entityLabel = ctx.entityType === "USER_WALLET" ? "liquidation wallet" : ctx.entityType === "PROTOCOL_CONTRACT" ? "liquidation contract" : "liquidation agent";
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${entityLabel} on ${ctx.chainId}, monitoring ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
 
   const storyParts: string[] = [];
   storyParts.push("Liquidators watch lending protocols for loans that have become risky (when collateral drops too low). When they find one, they step in to close it and earn a reward. They help keep DeFi protocols solvent.");
@@ -734,7 +782,8 @@ function narrativeLiquidator(ctx: SummaryContext): string {
 }
 
 function narrativeBridgeRelayer(ctx: SummaryContext): string {
-  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} bridge relayer on ${ctx.chainId}, operating through ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+  const entityLabel = ctx.entityType === "USER_WALLET" ? "bridge relay wallet" : ctx.entityType === "PROTOCOL_CONTRACT" ? "bridge relay contract" : "bridge relayer";
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${entityLabel} on ${ctx.chainId}, operating through ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
 
   const storyParts: string[] = [];
   storyParts.push("Bridge relayers help move assets between different blockchains. They're the delivery trucks of crypto — making sure your tokens arrive on the other side when you use a bridge.");
@@ -749,7 +798,8 @@ function narrativeBridgeRelayer(ctx: SummaryContext): string {
 }
 
 function narrativeYieldOptimizer(ctx: SummaryContext): string {
-  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} yield optimizer on ${ctx.chainId}, managing positions on ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+  const entityLabel = ctx.entityType === "USER_WALLET" ? "yield farming wallet" : "yield optimizer";
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${entityLabel} on ${ctx.chainId}, managing positions on ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
 
   const storyParts: string[] = [];
   storyParts.push("Yield optimizers are like automated fund managers — they move money between DeFi protocols to earn the best returns. They deposit, withdraw, swap, and rebalance to maximize earnings.");
@@ -782,13 +832,19 @@ function narrativeYieldOptimizer(ctx: SummaryContext): string {
 }
 
 function narrativeGovernance(ctx: SummaryContext): string {
-  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} governance participant on ${ctx.chainId}, active in ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+  const entityLabel = ctx.entityType === "USER_WALLET" ? "governance participant" : ctx.entityType === "PROTOCOL_CONTRACT" ? "governance contract" : "governance agent";
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${entityLabel} on ${ctx.chainId}, active in ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
 
   const govAct = ctx.profile?.activityBreakdown?.filter(a => a.category === "governance") ?? [];
   const govPct = govAct.reduce((s, a) => s + a.percentage, 0);
 
   const storyParts: string[] = [];
-  storyParts.push("Governance agents participate in protocol decision-making — voting on proposals, delegating voting power, or managing community treasuries.");
+  const govIntro = ctx.entityType === "USER_WALLET"
+    ? "This wallet participates in protocol decision-making — voting on proposals, delegating voting power, or managing community treasuries."
+    : ctx.entityType === "PROTOCOL_CONTRACT"
+    ? "This contract facilitates governance operations — executing proposals, managing voting, or coordinating community treasuries."
+    : "Governance agents participate in protocol decision-making — voting on proposals, delegating voting power, or managing community treasuries.";
+  storyParts.push(govIntro);
   if (govPct > 0) {
     storyParts.push(`${govPct}% of its activity is governance-related. ${govPct > 50 ? "This is primarily a governance-focused address." : "Governance is a side activity alongside its other on-chain operations."}`);
   }
@@ -802,7 +858,8 @@ function narrativeGovernance(ctx: SummaryContext): string {
 }
 
 function narrativeGeneric(ctx: SummaryContext): string {
-  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${ctx.typeName} on ${ctx.chainId}, operating across ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
+  const entityLabel = ctx.entityType === "USER_WALLET" ? "wallet" : ctx.entityType === "PROTOCOL_CONTRACT" ? "contract" : ctx.typeName;
+  const headline = `This is a${ctx.ageStr ? " " + ctx.ageStr + "-old" : ""} ${entityLabel} on ${ctx.chainId}, operating across ${ctx.protocolStr}. Trust score: ${ctx.score}/100.`;
 
   const sections = [headline, describeActivities(ctx), describeReliability(ctx), describeFinancials(ctx), describeTemporal(ctx)];
   const risk = buildRiskLines(ctx);
@@ -837,10 +894,11 @@ function generateAnalystSummary(
   txCount: number,
   profile?: BehavioralProfile,
   sampleContext?: SampleContext,
+  entityType?: EntityType,
 ): string {
   if (!metrics) return `Trust score: ${score}/100. Insufficient on-chain data for detailed analysis.`;
 
-  const ctx = buildSummaryContext(agentType, chainId, score, metrics, protocols, flags, txCount, profile, sampleContext);
+  const ctx = buildSummaryContext(agentType, chainId, score, metrics, protocols, flags, txCount, profile, sampleContext, entityType);
   const narrator = TYPE_NARRATOR[agentType] ?? narrativeGeneric;
   return narrator(ctx);
 }
@@ -854,6 +912,7 @@ function normalizeVeniceResponse(
   coinBalanceHistory?: { value: string }[],
   behavioralProfile?: BehavioralProfile,
   sampleContext?: SampleContext,
+  entityType?: EntityType,
 ): TrustScore {
   // Handle alternate field names Venice models sometimes use
   const score = (raw.overallScore ?? raw.trustScore ?? raw.score ?? 50) as number;
@@ -995,7 +1054,7 @@ function normalizeVeniceResponse(
   if (activityProfile) {
     if (isVagueActivity(activityProfile.primaryActivity)) {
       const filteredProtocols = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
-      activityProfile = { ...activityProfile, primaryActivity: describeAgentActions(resolvedType, filteredProtocols) };
+      activityProfile = { ...activityProfile, primaryActivity: describeAgentActions(resolvedType, filteredProtocols, entityType) };
     }
     if (!activityProfile.strategies.length || activityProfile.strategies.every(s => s.toLowerCase().includes("unknown"))) {
       const actionVerb = resolvedType === "KEEPER" ? "Automating tasks via"
@@ -1034,7 +1093,7 @@ function normalizeVeniceResponse(
     const protocolNames = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
     const filteredProtoNames = resolvedProtocols.filter(p => p !== "ERC20" && p !== "WETH");
     activityProfile = {
-      primaryActivity: describeAgentActions(resolvedType, filteredProtoNames),
+      primaryActivity: describeAgentActions(resolvedType, filteredProtoNames, entityType),
       strategies: protocolNames.length > 0 ? protocolNames.map(p => `${actionVerb} ${p}`) : ["Token transfers"],
       protocolBreakdown: protocolNames.map(p => ({ protocol: p, percentage: Math.round(100 / Math.max(protocolNames.length, 1)), action: `${actionVerb} ${p}` })),
       riskBehaviors: [],
@@ -1060,7 +1119,7 @@ function normalizeVeniceResponse(
             ? `Active since ${new Date(metrics.firstSeenTimestamp).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
             : "Recently active";
         const gasETH = (Number(BigInt(metrics.totalGasSpentWei)) / 1e18).toFixed(4);
-        const actionSentence = describeAgentActions(resolvedType, protocols);
+        const actionSentence = describeAgentActions(resolvedType, protocols, entityType);
         const freqDesc = isLowCov
           ? `${(totalTransactions ?? 0).toLocaleString()} total transactions`
           : `averages ${metrics.txFrequencyPerDay.toFixed(1)} transactions per day`;
@@ -1080,7 +1139,7 @@ function normalizeVeniceResponse(
     },
     flags,
     // Always generate analyst-quality summary from structured data (never use Venice prose)
-    summary: generateAnalystSummary(resolvedType, chainId, score, recommendation, metrics, resolvedProtocols, flags, totalTransactions ?? 0, behavioralProfile, sampleContext),
+    summary: generateAnalystSummary(resolvedType, chainId, score, recommendation, metrics, resolvedProtocols, flags, totalTransactions ?? 0, behavioralProfile, sampleContext, entityType),
     recommendation: recommendation as "SAFE" | "CAUTION" | "BLOCKLIST",
     analysisTimestamp: (raw.analysisTimestamp as string | undefined) ?? new Date().toISOString(),
     agentType: finalAgentType,
@@ -1393,7 +1452,8 @@ Begin your response with: {"agentAddress": "${sanitizedData.address}",`;
   console.log("[venice] Parsed summary:", (parsed.summary as string)?.slice(0, 200));
   console.log("[venice] Parsed summary length:", (parsed.summary as string)?.length);
   const sampleCtxForSummary = data.computedMetrics?.sampleContext ?? data.sampleContext;
-  const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId, data.computedMetrics, data.transactions.length, data.coinBalanceHistory, data.behavioralProfile, sampleCtxForSummary);
+  const resolvedEntityType = data.entityClassification?.entityType;
+  const normalized = normalizeVeniceResponse(parsed, data.address, data.chainId, data.computedMetrics, data.transactions.length, data.coinBalanceHistory, data.behavioralProfile, sampleCtxForSummary, resolvedEntityType);
   console.log("[venice] Final summary (post-normalize):", normalized.summary.slice(0, 200));
 
   return normalized;
