@@ -78,11 +78,13 @@ async function resolveAddress(
   input: string,
   chain: ChainId | "all",
 ): Promise<ResolvedInput> {
-  const address = input.toLowerCase();
+  // Solana addresses are case-sensitive base58 — don't lowercase them
+  const isSolana = chain === "solana" || isValidSolanaAddress(input.trim());
+  const address = isSolana ? input.trim() : input.toLowerCase();
 
   if (chain !== "all") {
-    // Try to find agent ID on this chain
-    const agentId = await findAgentByAddress(chain, address).catch(() => null);
+    // Skip ERC-8004 lookup for Solana
+    const agentId = isSolana ? null : await findAgentByAddress(chain, address).catch(() => null);
     return {
       address,
       chainId: chain,
