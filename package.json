@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@solana/web3.js": "^1.98.4",
     "framer-motion": "^12.38.0",
     "geist": "^1.7.0",
     "grammy": "1.41.1",
