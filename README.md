@@ -1,6 +1,6 @@
 # AgentAuditor: Real-Time Trust Scoring for Onchain AI Agents
 
-Forensic trust intelligence for autonomous agents operating across EVM chains. Analyzes transaction patterns, fund flows, and contract interactions to produce a 0-100 trust score with on-chain attestations.
+Forensic trust intelligence for autonomous agents operating across EVM chains and Solana. Analyzes transaction patterns, fund flows, and contract interactions to produce a 0-100 trust score with on-chain attestations.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
@@ -11,9 +11,9 @@ Forensic trust intelligence for autonomous agents operating across EVM chains. A
 
 ## Live Demo
 
-**[agent-auditor-two.vercel.app](https://agent-auditor-two.vercel.app)**
+**[agent-auditor-solana.vercel.app](https://agent-auditor-solana.vercel.app)**
 
-Paste any agent address, ERC-8004 Agent ID, or agent name. Select a chain (or scan all 6). Get a trust score in seconds.
+Paste any agent address, ERC-8004 Agent ID, or agent name. Select a chain (or scan all 7 including Solana). Get a trust score in seconds.
 
 ---
 
@@ -25,7 +25,7 @@ Autonomous AI agents are transacting onchain with real funds, but there's no way
 
 ## Features
 
-- **Multi-chain scanning** across Base, Gnosis, Ethereum, Arbitrum, Optimism, and Polygon
+- **Multi-chain scanning** across Base, Gnosis, Ethereum, Arbitrum, Optimism, Polygon, and Solana
 - **Smart input detection** for addresses, ERC-8004 Agent IDs, registry names, and ENS
 - **9-dimension behavioral profiling** covering activity breakdown, timezone fingerprinting, token flows, counterparty analysis, and protocol loyalty
 - **LLM-powered trust scoring** via Venice AI with structured 4-axis breakdown (transaction patterns, contract interactions, fund flow, behavioral consistency)
@@ -45,7 +45,7 @@ Autonomous AI agents are transacting onchain with real funds, but there's no way
 | Blockchain | Viem 2.47, Solidity 0.8.24 (Foundry) |
 | AI | Venice AI (llama-3.3-70b via OpenAI SDK) |
 | Bot | grammy 1.41 (Telegram) |
-| Data | Blockscout API (per-chain), ERC-8004 Identity Registry, Olas Service Registry |
+| Data | Blockscout API (EVM), Helius Enhanced Transactions (Solana), Covalent GoldRush (Solana balances), ERC-8004 Identity Registry, Olas Service Registry |
 | Deploy | Vercel (web), Render (bot worker) |
 
 ---
