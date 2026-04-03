@@ -1,0 +1,30 @@
+{
+  "skill": "hackathon-debug",
+  "status": "in-progress",
+  "debugMode": "full",
+  "startedAt": "2026-04-02T17:00:00Z",
+  "lastUpdated": "2026-04-02T17:00:00Z",
+  "currentPhase": 1,
+  "projectComponents": {
+    "contracts": true,
+    "frontend": true,
+    "api": true,
+    "subgraph": false,
+    "aiAgent": true
+  },
+  "phases": {
+    "1": { "status": "in-progress" },
+    "2": { "status": "pending" },
+    "3": { "status": "pending" },
+    "4": { "status": "pending" },
+    "5": { "status": "pending" },
+    "6": { "status": "pending" },
+    "7": { "status": "pending" },
+    "8": { "status": "pending" }
+  },
+  "unresolvedBugs": [],
+  "infraBlocks": [],
+  "detectiveDispatches": 0,
+  "confidenceScore": 0,
+  "testFilesWritten": []
+}

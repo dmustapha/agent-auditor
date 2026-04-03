@@ -1,9 +1,16 @@
 import { Bot, Context } from "grammy";
-import type { ChainId } from "@/lib/types";
+import type { ChainId, TrustScore } from "@/lib/types";
 import { detectInputType, resolveInput } from "@/lib/resolver";
-import { fetchAgentData } from "@/lib/blockscout";
-import { createVeniceClient, analyzeAgent, resolveModel, createMockTrustScore } from "@/lib/venice";
-import { validateTrustScore, formatForTelegram } from "@/lib/trust-score";
+import { fetchAgentData, detectAllChainsWithActivity } from "@/lib/blockscout";
+import { findAgentByAddress } from "@/lib/erc8004";
+import { enrichAndAnalyze } from "@/lib/analyze-pipeline";
+import { publishAttestation } from "@/lib/attestation";
+import { formatForTelegram } from "@/lib/trust-score";
+import { LRUCache } from "@/lib/cache";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+// Telegram-specific cache (keyed by address:chain, stores TrustScore)
+const telegramCache = new LRUCache<TrustScore>();
 
 // ─── Bot Setup ───────────────────────────────────────────────────────────────
 
@@ -56,6 +63,15 @@ export function createTelegramBot(token: string) {
 
   // /audit <input> [chain]
   bot.command("audit", async (ctx: Context) => {
+    // Rate limit by Telegram user ID
+    const userId = String(ctx.from?.id ?? "unknown");
+    const { allowed, retryAfterMs } = checkRateLimit(userId);
+    if (!allowed) {
+      const secs = Math.ceil(retryAfterMs / 1000);
+      await ctx.reply(`Rate limited. Try again in ${secs}s.`);
+      return;
+    }
+
     const text = ctx.message?.text ?? "";
     // Strip @BotName suffix for group chat compatibility
     const parts = text.replace(/^\/audit(@\S+)?/, "").trim().split(/\s+/);
@@ -76,32 +92,79 @@ export function createTelegramBot(token: string) {
     try {
       const inputType = detectInputType(input);
       const resolved = await resolveInput(input, inputType, chain);
+
+      // Fix 2: Check cache before doing any work
+      const cacheKey = `${resolved.address}:${resolved.chainId}`;
+      const cachedScore = telegramCache.get(cacheKey);
+      if (cachedScore) {
+        await ctx.reply(formatForTelegram(cachedScore, undefined), { parse_mode: "Markdown" });
+        return;
+      }
+
       const agentData = await fetchAgentData(resolved.chainId, resolved.address);
 
-      let trustScore;
-      const useMock = process.env.VENICE_MOCK === "true";
-
-      if (useMock) {
-        trustScore = createMockTrustScore(resolved.address, resolved.chainId, agentData.transactions.length);
+      // ERC-8004 reverse lookup (3s timeout, non-blocking)
+      let effectiveAgentId: bigint | null = resolved.agentId ?? null;
+      let isERC8004Registered = false;
+      if (resolved.agentId) {
+        isERC8004Registered = true;
       } else {
-        const apiKey = process.env.VENICE_API_KEY;
-        if (!apiKey) {
-          await ctx.reply("Venice API key not configured. Cannot analyze.");
-          return;
-        }
-        const client = createVeniceClient(apiKey);
-        const model = await resolveModel(client);
-        const raw = await analyzeAgent(client, agentData, model);
-        trustScore = validateTrustScore(raw);
+        try {
+          const timeout = new Promise<null>(r => setTimeout(() => r(null), 3000));
+          const id = await Promise.race([findAgentByAddress(resolved.chainId, resolved.address), timeout]);
+          if (id !== null) {
+            effectiveAgentId = id;
+            isERC8004Registered = true;
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      // Fix 1: Thread totalTxCount for accurate sample context
+      const { trustScore } = await enrichAndAnalyze({
+        agentData,
+        totalTxCount: agentData.addressInfo?.transactionsCount,
+        isERC8004Registered,
+      });
+
+      // Fix 2: Store result in cache
+      telegramCache.set(cacheKey, trustScore);
+
+      // Fix 5: On-chain attestation (fire-and-forget)
+      if (effectiveAgentId !== null && process.env.PRIVATE_KEY) {
+        publishAttestation(resolved.chainId, effectiveAgentId, trustScore).catch((attestErr) => {
+          console.warn("[telegram] Attestation failed (non-fatal):", attestErr);
+        });
       }
 
       await ctx.reply(formatForTelegram(trustScore, agentData.addressInfo?.ensName), { parse_mode: "Markdown" });
     } catch (err) {
       console.error("[telegram] audit error:", err);
-      const userMsg = err instanceof Error && err.message.includes("No transaction activity")
-        ? err.message
-        : "Analysis failed. Please try again in a moment.";
-      await ctx.reply(`Error: ${userMsg}`);
+
+      // Fix 4: Only surface known error patterns
+      const errMsg = err instanceof Error ? err.message : "";
+      const isNoActivity = errMsg.includes("No transaction activity");
+      const isNotFound = errMsg.includes("No agent found");
+
+      if (isNoActivity) {
+        // Fix 3: Suggest other active chains when no activity on specified chain
+        let suggestion = "";
+        try {
+          const inputType = detectInputType(input);
+          if (inputType === "address") {
+            const otherChains = await detectAllChainsWithActivity(input.trim().toLowerCase());
+            const active = otherChains.filter(c => c.txCount > 0);
+            if (active.length > 0) {
+              const names = active.map(c => c.chainId).join(", ");
+              suggestion = `\nThis address has activity on: ${names}\nTry: /audit ${input} ${active[0].chainId}`;
+            }
+          }
+        } catch { /* chain detection failed */ }
+        await ctx.reply(`No transaction activity found for this address.${suggestion}`);
+      } else if (isNotFound) {
+        await ctx.reply(`Error: ${errMsg}`);
+      } else {
+        await ctx.reply("Analysis failed. Please try again in a moment.");
+      }
     }
   });
 

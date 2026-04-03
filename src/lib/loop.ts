@@ -1,10 +1,9 @@
-import type { LoopStatus, AuditResult, TrustScore } from "./types";
+import type { LoopStatus, AuditResult } from "./types";
 import { getAllChainIds, getPublicClient } from "./chains";
 import { fetchAgentData } from "./blockscout";
 import { discoverNewAgents, getAgentIdentity } from "./erc8004";
 import { discoverOlasAgents, isOlasChain } from "./olas";
-import { createVeniceClient, analyzeAgent, resolveModel, createMockTrustScore } from "./venice";
-import { validateTrustScore } from "./trust-score";
+import { enrichAndAnalyze } from "./analyze-pipeline";
 import { publishAttestation } from "./attestation";
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -22,11 +21,6 @@ export async function runOnce(
   sendAlert: (msg: string) => Promise<void>,
 ): Promise<AuditResult[]> {
   const results: AuditResult[] = [];
-  const useMock = process.env.VENICE_MOCK === "true";
-  const veniceClient = !useMock && process.env.VENICE_API_KEY
-    ? createVeniceClient(process.env.VENICE_API_KEY)
-    : null;
-  const model = veniceClient ? await resolveModel(veniceClient) : null;
 
   const chains = getAllChainIds();
 
@@ -75,14 +69,11 @@ export async function runOnce(
           // Fetch onchain data
           const agentData = await fetchAgentData(chainId, agentAddress);
 
-          // Analyze
-          let trustScore: TrustScore;
-          if (useMock || !veniceClient || !model) {
-            trustScore = createMockTrustScore(agentAddress, chainId, agentData.transactions.length);
-          } else {
-            const raw = await analyzeAgent(veniceClient, agentData, model);
-            trustScore = validateTrustScore(raw);
-          }
+          // Analyze via shared pipeline (enrichment + Venice)
+          const { trustScore } = await enrichAndAnalyze({
+            agentData,
+            isERC8004Registered: agent.source === "erc8004",
+          });
 
           console.log(`[loop] ${chainId} ${agentAddress}: ${trustScore.overallScore}/100 ${trustScore.recommendation}`);
 

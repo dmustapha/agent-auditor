@@ -27,7 +27,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body: AnalyzeRequest = await request.json();
+    let body: AnalyzeRequest;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "invalid_input", message: "Invalid JSON body" } satisfies AnalyzeErrorResponse,
+        { status: 400 },
+      );
+    }
     const { input, chain } = body;
 
     if (!input || typeof input !== "string" || input.trim().length === 0) {
@@ -55,6 +63,20 @@ export async function POST(request: NextRequest) {
       );
     }
     const selectedChain: ChainId | "all" = chain ?? "all";
+
+    // 1.5. Validate address format matches selected chain
+    if (selectedChain === "solana" && inputType === "address" && /^0x[a-fA-F0-9]{40}$/.test(input.trim())) {
+      return NextResponse.json(
+        { error: "invalid_input", message: "EVM address cannot be used with Solana chain. Try 'All Chains' or select an EVM chain." } satisfies AnalyzeErrorResponse,
+        { status: 400 },
+      );
+    }
+    if (selectedChain !== "all" && selectedChain !== "solana" && inputType === "address" && isValidSolanaAddress(input.trim())) {
+      return NextResponse.json(
+        { error: "invalid_input", message: "Solana address cannot be used with an EVM chain. Try 'All Chains' or select Solana." } satisfies AnalyzeErrorResponse,
+        { status: 400 },
+      );
+    }
 
     // 2. Resolve input to address + chain
     let resolved;
@@ -233,13 +255,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(response);
   } catch (err) {
     console.error("[/api/analyze] Error:", err);
+    const errMsg = err instanceof Error ? err.message : "";
+    const isUpstream = errMsg.includes("Blockscout") || errMsg.includes("Helius") || errMsg.includes("Covalent") || errMsg.includes("fetch");
     const isDev = process.env.NODE_ENV === "development";
     return NextResponse.json(
       {
-        error: "internal_error",
-        message: isDev && err instanceof Error ? err.message : "An unexpected error occurred",
+        error: isUpstream ? "upstream_error" : "internal_error",
+        message: isDev ? errMsg || "An unexpected error occurred" : isUpstream ? "Data provider temporarily unavailable. Try again shortly." : "An unexpected error occurred",
       } satisfies AnalyzeErrorResponse,
-      { status: 500 },
+      { status: isUpstream ? 502 : 500 },
     );
   }
 }

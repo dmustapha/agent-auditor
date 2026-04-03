@@ -116,25 +116,28 @@ export async function computeBehavioralProfile(
   coinBalanceHistory: readonly CoinBalancePoint[],
   totalTransactionCount?: number,
 ): Promise<BehavioralProfile> {
-  const selfLower = address.toLowerCase();
+  const isSolana = isSolanaChain(chainId);
+  // Solana addresses are case-sensitive base58 — never lowercase them
+  const selfNorm = isSolana ? address : address.toLowerCase();
+  const normAddr = (a: string) => isSolana ? a : a.toLowerCase();
   const validTxs = transactions.filter(tx => tx.timestamp > 0);
   const sortedTxs = [...validTxs].sort((a, b) => a.timestamp - b.timestamp);
 
   return {
-    lifeEvents: computeLifeEvents(sortedTxs, coinBalanceHistory, selfLower),
+    lifeEvents: computeLifeEvents(sortedTxs, coinBalanceHistory, selfNorm, normAddr, isSolana),
     activityBreakdown: isSolanaChain(chainId)
       ? computeSolanaActivityBreakdown(validTxs, _contractCalls)
       : computeActivityBreakdown(validTxs),
-    topCounterparties: await resolveTopCounterparties(validTxs, selfLower, chainId),
+    topCounterparties: await resolveTopCounterparties(validTxs, selfNorm, chainId, normAddr, isSolana),
     failedTxAnalysis: computeFailedTxAnalysis(validTxs),
     timezoneFingerprint: computeTimezoneFingerprint(validTxs),
-    tokenFlowSummary: computeTokenFlowSummary(tokenTransfers, selfLower),
+    tokenFlowSummary: computeTokenFlowSummary(tokenTransfers, selfNorm, normAddr),
     balanceStory: computeBalanceStory(coinBalanceHistory),
     contractsDeployed: validTxs.filter(tx => tx.to === "CONTRACT_CREATION").length,
     walletAgeDays: sortedTxs.length >= 2
       ? Math.round((sortedTxs[sortedTxs.length - 1].timestamp - sortedTxs[0].timestamp) / 86_400_000)
       : 0,
-    firstAction: describeFirstAction(sortedTxs[0], selfLower),
+    firstAction: describeFirstAction(sortedTxs[0], selfNorm, normAddr, isSolana),
     protocolLoyalty: isSolanaChain(chainId)
       ? computeSolanaProtocolLoyalty(_contractCalls)
       : computeProtocolLoyalty(validTxs),
@@ -152,7 +155,9 @@ export async function computeBehavioralProfile(
 function computeLifeEvents(
   txs: readonly TransactionSummary[],
   balanceHistory: readonly CoinBalancePoint[],
-  selfLower: string,
+  selfNorm: string,
+  normAddr: (a: string) => string,
+  solana = false,
 ): LifeEvent[] {
   const events: LifeEvent[] = [];
   if (txs.length === 0) return events;
@@ -162,41 +167,42 @@ function computeLifeEvents(
   events.push({
     date: new Date(first.timestamp).toISOString().split("T")[0],
     type: "first_action",
-    description: describeFirstAction(first, selfLower),
+    description: describeFirstAction(first, selfNorm, normAddr, solana),
     txHash: first.hash,
   });
 
   // Biggest ETH gain (largest inbound value tx)
-  const inboundTxs = txs.filter(tx => tx.from.toLowerCase() !== selfLower && tx.value !== "0");
+  const unit = solana ? "SOL" : "ETH";
+  const inboundTxs = txs.filter(tx => normAddr(tx.from) !== selfNorm && tx.value !== "0");
   if (inboundTxs.length > 0) {
     const biggest = inboundTxs.reduce((max, tx) => {
       try { return BigInt(tx.value) > BigInt(max.value) ? tx : max; } catch { return max; }
     });
-    const ethVal = formatWeiToETH(biggest.value);
-    if (parseFloat(ethVal) > 0.001) {
+    const val = formatNativeValue(biggest.value, solana);
+    if (parseFloat(val) > 0.001) {
       events.push({
         date: new Date(biggest.timestamp).toISOString().split("T")[0],
         type: "biggest_gain",
-        description: `Received ${ethVal} ETH in a single transaction`,
-        value: `${ethVal} ETH`,
+        description: `Received ${val} ${unit} in a single transaction`,
+        value: `${val} ${unit}`,
         txHash: biggest.hash,
       });
     }
   }
 
-  // Biggest ETH loss (largest outbound value tx)
-  const outboundTxs = txs.filter(tx => tx.from.toLowerCase() === selfLower && tx.value !== "0");
+  // Biggest native loss (largest outbound value tx)
+  const outboundTxs = txs.filter(tx => normAddr(tx.from) === selfNorm && tx.value !== "0");
   if (outboundTxs.length > 0) {
     const biggest = outboundTxs.reduce((max, tx) => {
       try { return BigInt(tx.value) > BigInt(max.value) ? tx : max; } catch { return max; }
     });
-    const ethVal = formatWeiToETH(biggest.value);
-    if (parseFloat(ethVal) > 0.001) {
+    const val = formatNativeValue(biggest.value, solana);
+    if (parseFloat(val) > 0.001) {
       events.push({
         date: new Date(biggest.timestamp).toISOString().split("T")[0],
         type: "biggest_loss",
-        description: `Sent ${ethVal} ETH in a single transaction`,
-        value: `${ethVal} ETH`,
+        description: `Sent ${val} ${unit} in a single transaction`,
+        value: `${val} ${unit}`,
         txHash: biggest.hash,
       });
     }
@@ -230,12 +236,12 @@ function computeLifeEvents(
       } catch { /* skip */ }
     }
     if (peakVal > 0n) {
-      const peakETH = formatWeiToETH(peakVal.toString());
+      const peakFmt = formatNativeValue(peakVal.toString(), solana);
       events.push({
         date: new Date(sorted[peakIdx].timestamp).toISOString().split("T")[0],
         type: "peak_balance",
-        description: `Peak balance reached: ${peakETH} ETH`,
-        value: `${peakETH} ETH`,
+        description: `Peak balance reached: ${peakFmt} ${unit}`,
+        value: `${peakFmt} ${unit}`,
       });
     }
   }
@@ -250,12 +256,12 @@ function computeLifeEvents(
         try {
           const val = BigInt(tx.value);
           if (val * 100n / totalOutbound > 30n) {
-            const ethVal = formatWeiToETH(tx.value);
+            const drainVal = formatNativeValue(tx.value, solana);
             events.push({
               date: new Date(tx.timestamp).toISOString().split("T")[0],
               type: "drain_event",
-              description: `Large outflow: ${ethVal} ETH (${Number(val * 100n / totalOutbound)}% of total outbound)`,
-              value: `${ethVal} ETH`,
+              description: `Large outflow: ${drainVal} ${unit} (${Number(val * 100n / totalOutbound)}% of total outbound)`,
+              value: `${drainVal} ${unit}`,
               txHash: tx.hash,
             });
             break; // only report the largest drain
@@ -348,18 +354,20 @@ function computeActivityBreakdown(txs: readonly TransactionSummary[]): ActivityC
 
 async function resolveTopCounterparties(
   txs: readonly TransactionSummary[],
-  selfLower: string,
+  selfNorm: string,
   _chainId: ChainId,
+  normAddr: (a: string) => string,
+  solana = false,
 ): Promise<ResolvedCounterparty[]> {
   const counterpartyData = new Map<string, { count: number; inbound: bigint; outbound: bigint }>();
 
   for (const tx of txs) {
-    const isOutbound = tx.from.toLowerCase() === selfLower;
+    const isOutbound = normAddr(tx.from) === selfNorm;
     const counterparty = isOutbound
-      ? (tx.to && tx.to !== "CONTRACT_CREATION" ? tx.to.toLowerCase() : null)
-      : tx.from.toLowerCase();
+      ? (tx.to && tx.to !== "CONTRACT_CREATION" ? normAddr(tx.to) : null)
+      : normAddr(tx.from);
 
-    if (!counterparty || counterparty === selfLower) continue;
+    if (!counterparty || counterparty === selfNorm) continue;
 
     const entry = counterpartyData.get(counterparty) ?? { count: 0, inbound: 0n, outbound: 0n };
     entry.count++;
@@ -390,7 +398,7 @@ async function resolveTopCounterparties(
       address: addr,
       name,
       txCount: data.count,
-      volumeETH: formatWeiToETH(totalVolume.toString()),
+      volumeETH: formatNativeValue(totalVolume.toString(), solana),
       direction,
     };
   });
@@ -490,12 +498,12 @@ function computeTimezoneFingerprint(txs: readonly TransactionSummary[]): Timezon
 
 // ─── Token Flow Summary ─────────────────────────────────────────────────────
 
-function computeTokenFlowSummary(transfers: readonly TokenTransfer[], selfLower: string): TokenFlowSummary {
+function computeTokenFlowSummary(transfers: readonly TokenTransfer[], selfNorm: string, normAddr: (a: string) => string): TokenFlowSummary {
   const tokenCounts = new Map<string, { count: number; inbound: number; outbound: number }>();
 
   for (const t of transfers) {
     const symbol = t.token.split(":")[0] || "UNKNOWN";
-    const isInbound = t.to.toLowerCase() === selfLower;
+    const isInbound = normAddr(t.to) === selfNorm;
     const entry = tokenCounts.get(symbol) ?? { count: 0, inbound: 0, outbound: 0 };
     entry.count++;
     if (isInbound) entry.inbound++; else entry.outbound++;
@@ -632,34 +640,42 @@ function computeLongestDormancy(txs: readonly TransactionSummary[]): BehavioralP
 
 // ─── First Action Description ───────────────────────────────────────────────
 
-function describeFirstAction(tx: TransactionSummary | undefined, selfLower: string): string {
+function describeFirstAction(tx: TransactionSummary | undefined, selfNorm: string, normAddr: (a: string) => string = (a) => a.toLowerCase(), solana = false): string {
   if (!tx) return "No transactions recorded";
-  const isOutbound = tx.from.toLowerCase() === selfLower;
+  const isOutbound = normAddr(tx.from) === selfNorm;
   if (tx.to === "CONTRACT_CREATION") return "Deployed a contract";
-  const ethVal = formatWeiToETH(tx.value);
+  const unit = solana ? "SOL" : "ETH";
+  const val = formatNativeValue(tx.value, solana);
   if (isOutbound) {
     const rawSel = tx.methodId?.toLowerCase().replace(/^0x/, "") ?? "";
     const sel = rawSel.length >= 8 && rawSel !== "00000000" ? `0x${rawSel.slice(0, 8)}` : null;
     const reg = sel ? METHOD_REGISTRY[sel] : undefined;
-    if (reg) return `Called ${reg.protocol} (${ethVal} ETH)`;
-    return `Sent ${ethVal} ETH`;
+    if (reg) return `Called ${reg.protocol} (${val} ${unit})`;
+    return `Sent ${val} ${unit}`;
   }
-  return `Received ${ethVal} ETH`;
+  return `Received ${val} ${unit}`;
 }
 
 // ─── Utility ────────────────────────────────────────────────────────────────
 
 const ETH_WEI = 1_000_000_000_000_000_000n;
+const SOL_LAMPORTS = 1_000_000_000n;
 
-function formatWeiToETH(weiStr: string): string {
+function formatNativeValue(valueStr: string, solana = false): string {
   try {
-    const wei = BigInt(weiStr);
-    const sign = wei < 0n ? "-" : "";
-    const abs = wei < 0n ? -wei : wei;
-    const whole = abs / ETH_WEI;
-    const frac = abs % ETH_WEI;
-    return `${sign}${whole}.${frac.toString().padStart(18, "0").slice(0, 4)}`;
+    const val = BigInt(valueStr);
+    const sign = val < 0n ? "-" : "";
+    const abs = val < 0n ? -val : val;
+    const divisor = solana ? SOL_LAMPORTS : ETH_WEI;
+    const decimals = solana ? 9 : 18;
+    const whole = abs / divisor;
+    const frac = abs % divisor;
+    return `${sign}${whole}.${frac.toString().padStart(decimals, "0").slice(0, 4)}`;
   } catch {
     return "0.0000";
   }
+}
+
+function formatWeiToETH(weiStr: string): string {
+  return formatNativeValue(weiStr, false);
 }

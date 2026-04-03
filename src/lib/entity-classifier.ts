@@ -7,6 +7,7 @@ import type {
 } from "./types";
 import { resolveProtocolName } from "./protocol-registry";
 import { resolveSolanaProgram } from "./solana-programs";
+import { isValidSolanaAddress } from "./solana";
 
 // ─── Input Interface ────────────────────────────────────────────────────────
 
@@ -26,9 +27,11 @@ export function computeFromRatio(
   transactions: readonly TransactionSummary[],
 ): number {
   if (transactions.length === 0) return 0;
-  const selfLower = address.toLowerCase();
+  const isSolana = isValidSolanaAddress(address);
+  const selfNorm = isSolana ? address : address.toLowerCase();
+  const normAddr = (a: string) => isSolana ? a : a.toLowerCase();
   const fromCount = transactions.filter(
-    (tx) => tx.from.toLowerCase() === selfLower,
+    (tx) => normAddr(tx.from) === selfNorm,
   ).length;
   return fromCount / transactions.length;
 }

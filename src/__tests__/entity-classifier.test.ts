@@ -184,12 +184,30 @@ describe("classifyEntityType", () => {
     expect(result.confidence).toBe("MEDIUM");
   });
 
-  test("ambiguous → UNKNOWN/LOW", () => {
+  test("EOA with ambiguous humanScore (30-70) → USER_WALLET/LOW via EOA fallback", () => {
     const midWallet: WalletClassification = { ...HIGH_HUMAN_WALLET, humanScore: 50 };
     const result = classifyEntityType({
       address: "0xABC",
       transactions: makeTxs(20, "0xABC", "0xOTHER"),
       addressInfo: EOA_ADDRESS_INFO,
+      walletClassification: midWallet,
+      isERC8004Registered: false,
+    });
+    expect(result.entityType).toBe("USER_WALLET");
+    expect(result.confidence).toBe("LOW");
+    expect(result.primarySignal).toBe("EOA without strong classification signals");
+  });
+
+  test("contract with ambiguous signals → UNKNOWN/LOW", () => {
+    const midWallet: WalletClassification = { ...HIGH_HUMAN_WALLET, humanScore: 50, isDefinitelyContract: true };
+    const txs = [
+      ...makeTxs(10, "0xABC", "0xOTHER"),
+      ...makeTxs(10, "0xOTHER", "0xABC"),
+    ];
+    const result = classifyEntityType({
+      address: "0xABC",
+      transactions: txs,
+      addressInfo: CONTRACT_ADDRESS_INFO,
       walletClassification: midWallet,
       isERC8004Registered: false,
     });
@@ -253,14 +271,56 @@ describe("classifyEntityType", () => {
     expect(result.confidence).toBe("MEDIUM");
   });
 
-  test("undefined walletClassification → skips humanScore, falls to UNKNOWN", () => {
+  test("EOA without walletClassification → USER_WALLET/LOW via EOA fallback", () => {
     const result = classifyEntityType({
       address: "0xABC",
       transactions: makeTxs(20, "0xABC", "0xOTHER"),
       addressInfo: EOA_ADDRESS_INFO,
       isERC8004Registered: false,
     });
-    expect(result.entityType).toBe("UNKNOWN");
+    expect(result.entityType).toBe("USER_WALLET");
     expect(result.confidence).toBe("LOW");
+  });
+
+  test("contract without walletClassification and < 10 txs → UNKNOWN", () => {
+    const result = classifyEntityType({
+      address: "0xABC",
+      transactions: makeTxs(5, "0xOTHER", "0xABC"),
+      addressInfo: CONTRACT_ADDRESS_INFO,
+      isERC8004Registered: false,
+    });
+    expect(result.entityType).toBe("UNKNOWN");
+  });
+
+  test("EOA with humanScore 40 → USER_WALLET/LOW (edge case)", () => {
+    const lowMidWallet: WalletClassification = { ...HIGH_HUMAN_WALLET, humanScore: 40 };
+    const result = classifyEntityType({
+      address: "0xABC",
+      transactions: makeTxs(20, "0xABC", "0xOTHER"),
+      addressInfo: EOA_ADDRESS_INFO,
+      walletClassification: lowMidWallet,
+      isERC8004Registered: false,
+    });
+    expect(result.entityType).toBe("USER_WALLET");
+    expect(result.confidence).toBe("LOW");
+  });
+
+  test("Blockscout false positive: isContract=true but isDefinitelyContract=false → USER_WALLET/LOW", () => {
+    // vitalik.eth scenario: Blockscout says contract, behavioral analysis disagrees, humanScore in ambiguous zone
+    const midWallet: WalletClassification = { ...HIGH_HUMAN_WALLET, humanScore: 50, isDefinitelyContract: false };
+    const txs = [
+      ...makeTxs(5, "0xABC", "0xOTHER"),
+      ...makeTxs(5, "0xOTHER", "0xABC"),
+    ];
+    const result = classifyEntityType({
+      address: "0xABC",
+      transactions: txs,
+      addressInfo: CONTRACT_ADDRESS_INFO, // isContract: true
+      walletClassification: midWallet,
+      isERC8004Registered: false,
+    });
+    expect(result.entityType).toBe("USER_WALLET");
+    expect(result.confidence).toBe("LOW");
+    expect(result.primarySignal).toBe("behavioral analysis overrides Blockscout isContract flag");
   });
 });

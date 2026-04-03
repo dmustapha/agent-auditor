@@ -93,10 +93,10 @@ export async function getTransactions(
       gasUsed: tx.gas_used,
       gasLimit: tx.gas_limit,
       nonce: tx.nonce,
-      timestamp: new Date(tx.timestamp).getTime(),
+      timestamp: tx.timestamp ? new Date(tx.timestamp).getTime() : 0,
       methodId: tx.decoded_input?.method_id ?? tx.method ?? "0x",
       success: tx.result === "success" || tx.status === "ok",
-    }));
+    })).filter(tx => Number.isFinite(tx.timestamp) && tx.timestamp > 0);
     all.push(...mapped);
 
     if (!data.next_page_params) break;
@@ -120,8 +120,8 @@ export async function getTokenTransfers(
     from: t.from.hash,
     to: t.to.hash,
     value: t.total.value,
-    timestamp: new Date(t.timestamp).getTime(),
-  }));
+    timestamp: t.timestamp ? new Date(t.timestamp).getTime() : 0,
+  })).filter(t => t.timestamp > 0);
 }
 
 export async function getInternalTransactions(
@@ -136,8 +136,8 @@ export async function getInternalTransactions(
   return (data.items ?? []).filter((t): t is BlockscoutInternalTx & { to: { hash: string } } => t.to !== null).map((t) => ({
     contract: t.to.hash,
     method: t.type,
-    timestamp: new Date(t.timestamp).getTime(),
-  }));
+    timestamp: t.timestamp ? new Date(t.timestamp).getTime() : 0,
+  })).filter(t => t.timestamp > 0);
 }
 
 export async function getSmartContractData(
@@ -170,10 +170,10 @@ export async function getCoinBalanceHistory(
     const res = await rateLimitedFetch(chainId, url);
     const data: { items?: BlockscoutCoinBalanceHistoryItem[] } = await res.json();
     return (data.items ?? []).map((item) => ({
-      timestamp: new Date(item.block_timestamp).getTime(),
+      timestamp: item.block_timestamp ? new Date(item.block_timestamp).getTime() : 0,
       value: item.value,
       blockNumber: item.block_number,
-    }));
+    })).filter(p => Number.isFinite(p.timestamp) && p.timestamp > 0);
   } catch {
     return [];
   }
@@ -192,9 +192,9 @@ export async function getEventLogs(
       txHash: log.transaction_hash,
       topics: log.topics,
       data: log.data,
-      timestamp: new Date(log.block_timestamp).getTime(),
+      timestamp: log.block_timestamp ? new Date(log.block_timestamp).getTime() : 0,
       contractAddress: log.address.hash,
-    }));
+    })).filter(l => Number.isFinite(l.timestamp) && l.timestamp > 0);
   } catch {
     return [];
   }

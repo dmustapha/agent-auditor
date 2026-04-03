@@ -51,7 +51,7 @@ const TICK_COUNT = 12;
 export function TrustScoreCard({ score, badge, attestationTxHash, chainResults }: TrustScoreCardProps) {
   const recommendation = score.recommendation as Recommendation;
   const strokeColor = RECOMMENDATION_COLOR[recommendation] ?? score.recommendationColor;
-  const typeMeta = AGENT_TYPE_META[score.agentType];
+  const typeMeta = AGENT_TYPE_META[score.agentType] ?? AGENT_TYPE_META.UNKNOWN;
   const netSign = netFlowSign(score.financialSummary.netFlowETH);
 
   const [animated, setAnimated] = useState(false);

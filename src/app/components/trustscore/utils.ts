@@ -191,7 +191,7 @@ export function useScrollReveal(deps: unknown[]): React.RefCallback<HTMLElement>
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 export function AgentTypeShape({ type }: { type: AgentType }) {
-  const meta = AGENT_TYPE_META[type];
+  const meta = AGENT_TYPE_META[type] ?? AGENT_TYPE_META.UNKNOWN;
   const size = 28;
 
   const shapes: Record<string, React.ReactNode> = {
