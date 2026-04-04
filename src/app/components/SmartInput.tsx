@@ -18,6 +18,7 @@ export function detectInputType(input: string): { type: InputType; hint: string 
   if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) return { type: "address", hint: "Address" };
   if (trimmed.startsWith("0x") && !/^0x[a-fA-F0-9]{40}$/.test(trimmed)) return { type: "address", hint: "Invalid address" };
   if (trimmed.endsWith(".eth")) return { type: "ens", hint: "ENS" };
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed)) return { type: "address", hint: "Solana Address" };
   return { type: "name", hint: "Name" };
 }
 
