@@ -38,7 +38,7 @@ function deriveBadge(
   return null;
 }
 
-const VALID_CHAINS = new Set(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "all"]);
+const VALID_CHAINS = new Set(["base", "gnosis", "ethereum", "arbitrum", "optimism", "polygon", "solana", "all"]);
 
 
 const LOADING_STEPS = [
