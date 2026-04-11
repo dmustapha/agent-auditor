@@ -1,5 +1,9 @@
 # AgentAuditor: Real-Time Trust Scoring for Onchain AI Agents
 
+**🥈 2nd Place — GoldRush Agentic Track, Trends.fun Hackathon 2026**
+
+[![GoldRush Agentic Track](https://img.shields.io/badge/GoldRush_Agentic_Track-2nd_Place-C0C0C0)]()
+
 Forensic trust intelligence for autonomous agents operating across EVM chains and Solana. Analyzes transaction patterns, fund flows, and contract interactions to produce a 0-100 trust score with on-chain attestations.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)

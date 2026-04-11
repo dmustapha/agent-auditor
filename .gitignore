@@ -42,3 +42,7 @@ tasks/
 # Logs
 *.log
 .env*.local
+
+docs/context/
+VERIFY-REPORT.md
+submission/
